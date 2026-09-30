@@ -130,22 +130,6 @@ function Particles({ className, density = 34, confetti = false }) {
 
 /* ================= hooks ================= */
 
-function useReveal() {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (calmMotion()) { el.querySelectorAll(".reveal").forEach((n) => n.classList.add("in")); return; }
-    const io = new IntersectionObserver(
-      (es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
-      { threshold: 0.12, rootMargin: "0px 0px -50px 0px" }
-    );
-    el.querySelectorAll(".reveal").forEach((n) => io.observe(n));
-    return () => io.disconnect();
-  }, []);
-  return ref;
-}
-
 function useCountUp(target, ms) {
   const [v, setV] = useState(target);
   const from = useRef(target);
@@ -174,13 +158,10 @@ function Counter({ value, className, style }) {
 
 /* ================= brand ================= */
 
-function GrabMark({ size = 20, color = "#fff" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 15.5c0-4.7 3.6-8 8.2-8 3.3 0 5.6 1.6 6.6 3.6l-3 1.5c-.6-1.2-1.9-2-3.6-2-2.6 0-4.5 1.9-4.5 4.9v2.9H4v-2.9Z" fill={color} />
-      <circle cx="16.6" cy="17.3" r="2.4" fill={color} />
-    </svg>
-  );
+const LOGO = (process.env.PUBLIC_URL || "") + "/grab-logo.png";
+const LOGO_WHITE = (process.env.PUBLIC_URL || "") + "/grab-logo-white.png";
+function Logo({ white, height = 30, style }) {
+  return <img src={white ? LOGO_WHITE : LOGO} alt="Grab" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
 }
 
 function Nav({ page, go }) {
@@ -190,11 +171,8 @@ function Nav({ page, go }) {
     <nav className="nav">
       <div className="shell nav-in">
         <button className="brand" onClick={() => go("home")}>
-          <span className="brand-mark"><GrabMark /></span>
-          <span style={{ textAlign: "left" }}>
-            <span className="wordmark">Grab</span>
-            <span className="brand-sub">HOUSE CHALLENGE</span>
-          </span>
+          <Logo height={30} />
+          <span className="brand-sub brand-sub-logo">HOUSE CHALLENGE</span>
         </button>
         <div className="nav-links">
           {items.map(([k, label]) => (
@@ -213,7 +191,7 @@ function Ticker({ totals, go }) {
     <div className="ticker">
       <div className="shell ticker-in">
         <span className="live-dot" />
-        <span className="ticker-now">{db.MODE === "demo" ? "Demo mode" : "Live"}: {now.name}</span>
+        <span className="ticker-now">Now: {now.name}</span>
         <span className="ticker-sep">|</span>
         <span>Next {next.time} {next.name}</span>
         <div className="ticker-rail">
@@ -382,7 +360,7 @@ function Scanner({ onCode, busy }) {
         <canvas ref={canvas} style={{ display: "none" }} />
         {on ? <span className="scan-frame" /> : (
           <div className="scan-idle">
-            <GrabMark size={42} />
+            <Logo white height={40} />
             <span>Point the camera at the guest's QR pass</span>
           </div>
         )}
@@ -403,164 +381,30 @@ function Scanner({ onCode, busy }) {
 
 /* ================= home ================= */
 
-function Home({ go, people, totals }) {
-  const wrap = useReveal();
-  const counts = useMemo(() => {
-    const m = {};
-    HOUSES.forEach((h) => (m[h.key] = 0));
-    people.forEach((p) => { m[p.house] = (m[p.house] || 0) + 1; });
-    return m;
-  }, [people]);
-  const checked = people.filter((p) => p.checkedInAt).length;
-  const routeFill = ((2 + 0.5) / ITINERARY.length) * 100 + "%";
-
+function Home({ go, people }) {
+  let saved = null;
+  try { saved = localStorage.getItem("grab_my_pass"); } catch (e) { /* ignore */ }
   return (
-    <div ref={wrap}>
-      <header className="hero">
-        <div className="hero-img only-landscape" style={BG("bg-hero.jpg")} />
-        <div className="hero-img only-portrait" style={BG("bg-hero-p.jpg")} />
-        <div className="hero-scrim" />
-        <div className="hero-rays" />
-        <Particles className="hero-canvas" density={40} confetti />
-        <div className="shell hero-in">
-          <span className="hero-eyebrow">
-            <span className="live-dot" />
-            RSVP is open
-          </span>
-          <h1>
-            <span>Four houses.</span>
-            <span>Three challenges.</span>
-            <span>One epic Saturday.</span>
-          </h1>
-          <p className="hero-sub">
-            {EVENT.dateLong} at {EVENT.venue}. RSVP, pick your colour, and your QR pass gets you in and gets you your door gift.
-          </p>
-          <div className="hero-cta">
-            <button className="btn" onClick={() => go("rsvp")}>RSVP now <span className="btn-arrow">&rarr;</span></button>
-            <button className="btn btn-ghost" onClick={() => go("scores")}>Watch live scores</button>
-          </div>
-          <div className="hero-flags">
-            {HOUSES.map((h, i) => (
-              <span key={h.key} className="flag" style={{ background: h.hex, animationDelay: i * 0.22 + "s" }} />
-            ))}
-          </div>
+    <header className="hero hero-focus">
+      <div className="hero-img only-landscape" style={BG("bg-hero.jpg")} />
+      <div className="hero-img only-portrait" style={BG("bg-hero-p.jpg")} />
+      <div className="hero-scrim" />
+      <Particles className="hero-canvas" density={26} confetti />
+      <div className="shell hero-in focus-in">
+        <Logo height={64} style={{ margin: "0 auto 18px" }} />
+        <span className="hero-eyebrow"><span className="live-dot" />RSVP is open</span>
+        <h1 className="focus-title">{EVENT.name} {EVENT.year}</h1>
+        <p className="focus-meta">{EVENT.dateLong}<br />{EVENT.venue}</p>
+        <div className="focus-cta">
+          <button className="btn btn-xl" onClick={() => go("rsvp")}>RSVP now <span className="btn-arrow">&rarr;</span></button>
+          <button className="btn btn-ghost" onClick={() => go("pass", saved || "")}>{saved ? "Open my pass" : "Already RSVP'd? Find my pass"}</button>
         </div>
-        <div className="stat-band">
-          <div className="stat"><div className="num stat-v"><Counter value={people.length} /></div><div className="stat-l">RSVP'd</div></div>
-          <div className="stat"><div className="num stat-v"><Counter value={checked} /></div><div className="stat-l">checked in</div></div>
-          <div className="stat"><div className="num stat-v">3</div><div className="stat-l">challenges</div></div>
-          <div className="stat"><div className="num stat-v">4</div><div className="stat-l">houses in play</div></div>
+        <div className="focus-houses">
+          {HOUSES.map((h) => <span key={h.key} className="focus-house" style={{ background: h.hex }}>{h.name}</span>)}
         </div>
-      </header>
-
-      <section className="section bg-soft">
-        <div className="shell">
-          <div className="section-head reveal">
-            <h2>How it works</h2>
-            <p className="lede">Three steps from invite to door gift. No paper, no lists at the door.</p>
-          </div>
-          <div className="chal-grid steps-grid">
-            {[
-              ["1", "RSVP", "Name, department, email, phone and your house. Takes under a minute.", "rsvp", "RSVP now"],
-              ["2", "Scan in", "Show your QR pass at the lobby desk. Staff scan it and you are checked in.", "pass", "Find my pass"],
-              ["3", "Claim your gift", "At the gift counter, slide to claim. One gift per pass - it locks once claimed.", "pass", "Open my pass"],
-            ].map(([n, t, b, to, cta], i) => (
-              <article key={n} className={"chal reveal pop d" + (i + 1) + (i === 0 ? " chal-lead" : "")}>
-                <div>
-                  <div className="step-n num">{n}</div>
-                  <div className="chal-name">{t}</div>
-                  <p className="chal-blurb">{b}</p>
-                </div>
-                <div><button className={"btn btn-sm" + (i === 0 ? "" : " btn-ghost")} onClick={() => go(to)}>{cta}</button></div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="section" style={{ background: "var(--ink)", position: "relative", overflow: "hidden" }}>
-        <div className="bg-mesh" />
-        <div className="shell" style={{ position: "relative", zIndex: 1 }}>
-          <div className="section-head reveal" style={{ color: "#fff" }}>
-            <h2>Pick a side</h2>
-            <p className="lede" style={{ color: "#a9c1b4" }}>Your house is set when you RSVP and locked for the day. Wear your colour.</p>
-          </div>
-          <div className="house-strip">
-            {HOUSES.map((h, i) => (
-              <div key={h.key} className={"house-tile reveal pop d" + (i + 1)} style={{ background: h.hex }}>
-                <div className="h-name">{h.name}</div>
-                <div>
-                  <div className="num" style={{ fontSize: 36 }}><Counter value={counts[h.key]} /></div>
-                  <div className="h-count">members</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="section bg-soft">
-        <div className="shell">
-          <div className="section-head reveal">
-            <h2>The three challenges</h2>
-            <p className="lede">Every challenge keeps its own scoreboard, then rank points roll up into the overall cup.</p>
-          </div>
-          <div className="chal-grid">
-            {CHALLENGES.map((c, i) => {
-              const lead = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
-                .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))[0];
-              return (
-                <article key={c.key} className={"chal reveal pop d" + (i + 1) + (c.lead ? " chal-lead" : "")}>
-                  <div>
-                    <div className="chal-name">{c.name}</div>
-                    <p className="chal-blurb">{c.blurb}</p>
-                  </div>
-                  <div>
-                    <div className="chal-meta">
-                      <span>{c.time}</span><span>{c.venue}</span><span>Scored in {c.metric}</span>
-                    </div>
-                    <div className="chal-lead-line">
-                      <span className="chip-dot" style={{ background: lead.h.hex }} />
-                      {lead.h.name} leads on <span className="num">{showValue(c, lead.v)}</span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="shell split" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 44 }}>
-          <div className="reveal">
-            <h2 style={{ fontSize: 36, marginBottom: 8 }}>How the day runs</h2>
-            <p className="lede" style={{ marginBottom: 24 }}>One route, seven stops.</p>
-            <div className="route" style={{ "--route-fill": routeFill }}>
-              {ITINERARY.map((s, i) => (
-                <div key={s.time} className={"stop" + (i < 2 ? " stop-done" : i === 2 ? " stop-live" : "")}>
-                  <div className="stop-time">{s.time}</div>
-                  <div className="stop-name">{s.name}</div>
-                  <div className="stop-note">{s.note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="reveal d2">
-            <div className="panel" style={{ position: "sticky", top: 100 }}>
-              <h3 style={{ fontSize: 24, marginBottom: 12 }}>Bring your QR</h3>
-              <p style={{ color: "var(--ink-2)", fontSize: 15.5 }}>
-                It is on screen the moment you RSVP and in your inbox. Save it to your photos - the lobby signal is patchy and the queue moves fast.
-              </p>
-              <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn btn-sm" onClick={() => go("rsvp")}>RSVP</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => go("pass")}>Find my pass</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+        <p className="focus-count"><span className="num">{people.length}</span> colleagues have RSVP'd</p>
+      </div>
+    </header>
   );
 }
 
@@ -712,7 +556,7 @@ function Pass({ arg, people, go, toast }) {
             <div style={{ fontSize: 13, opacity: 0.9 }}>{EVENT.name} {EVENT.year}</div>
             <div className="wide" style={{ fontSize: 33, fontWeight: 700 }}>House {h.name}</div>
           </div>
-          <GrabMark size={30} />
+          <Logo white height={26} />
         </div>
         <div className="trip-body">
           <div className="pass-qr">
@@ -1109,7 +953,7 @@ function Scores({ totals, standings, go, arg }) {
             </div>
           </div>
           <div className="board-brand">
-            <span className="wordmark">Grab</span>
+            <Logo height={34} />
             <span className="brand-sub">HOUSE CHALLENGE {EVENT.year}</span>
           </div>
         </div>
@@ -1512,12 +1356,12 @@ export default function App() {
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} /></PinGate>;
   else if (page === "gift") body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
   else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} go={go} toast={toast} />;
-  else body = <Home key="home" go={go} people={people} totals={totals} />;
+  else body = <Home key="home" go={go} people={people} />;
 
   return (
     <>
       <Nav page={page} go={go} />
-      <Ticker totals={totals} go={go} />
+      {page !== "home" && <Ticker totals={totals} go={go} />}
       {loadErr && loaded && <div className="banner banner-bad" style={{ borderRadius: 0, margin: 0 }}>{loadErr}</div>}
       {body}
       {toastEl}
