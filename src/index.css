@@ -786,8 +786,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .focus-meta { color: rgba(255,255,255,.85); font-size: clamp(16px, 2.2vw, 20px); line-height: 1.5; }
 .focus-cta { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; width: 100%; max-width: 380px; }
 .btn-xl { font-size: 20px; min-height: 64px; }
-.focus-houses { display: flex; gap: 8px; margin-top: 30px; flex-wrap: wrap; justify-content: center; }
-.focus-house { color: #fff; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 999px; }
+.focus-houses { display: grid; grid-template-columns: repeat(4, 76px); gap: 8px; margin-top: 30px; justify-content: center; }
+.focus-house { color: #fff; font-weight: 700; font-size: 13px; padding: 6px 0; text-align: center; border-radius: 999px; }
 .focus-count { color: rgba(255,255,255,.7); margin-top: 18px; font-size: 14.5px; }
 .focus-count .num { color: #fff; font-size: 17px; }
 @media (max-width: 700px) {

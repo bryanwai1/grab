@@ -1,11 +1,11 @@
 // Event settings. Edit this file to rebrand the site for another event.
 
 export const EVENT = {
-  name: "Grab House Challenge",
+  name: "Grab MY Hari Sukan",
   year: "2026",
-  dateLong: "Saturday, 14 March 2026",
-  dateShort: "14 Mar 2026",
-  venue: "Grab Malaysia HQ, Petaling Jaya",
+  dateLong: "Friday, 20 November 2026",
+  dateShort: "20 Nov 2026",
+  venue: "Arena Sukan Kuala Lumpur (ASKL)",
   doorsOpen: "08:00",
   gift: "Door gift",
 };

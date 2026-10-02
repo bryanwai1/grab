@@ -1,7 +1,7 @@
 // Vercel Serverless Function - /api/send-email
 // Sends the RSVP confirmation with the QR pass. Needs RESEND_KEY (and optionally FROM_EMAIL) in Vercel env vars.
 const RESEND_KEY = process.env.RESEND_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || "Grab House Challenge <rsvp@smartsolutionsevent.my>";
+const FROM_EMAIL = process.env.FROM_EMAIL || "Grab MY Hari Sukan <rsvp@smartsolutionsevent.my>";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });

@@ -160,6 +160,10 @@ function Counter({ value, className, style }) {
 
 const LOGO = (process.env.PUBLIC_URL || "") + "/grab-logo.png";
 const LOGO_WHITE = (process.env.PUBLIC_URL || "") + "/grab-logo-white.png";
+const BADGE = (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png";
+function Badge({ height = 40, style }) {
+  return <img src={BADGE} alt="Grab MY Hari Sukan 2026" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
+}
 function Logo({ white, height = 30, style }) {
   return <img src={white ? LOGO_WHITE : LOGO} alt="Grab" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
 }
@@ -171,8 +175,7 @@ function Nav({ page, go }) {
     <nav className="nav">
       <div className="shell nav-in">
         <button className="brand" onClick={() => go("home")}>
-          <Logo height={30} />
-          <span className="brand-sub brand-sub-logo">HOUSE CHALLENGE</span>
+          <Badge height={40} />
         </button>
         <div className="nav-links">
           {items.map(([k, label]) => (
@@ -391,9 +394,8 @@ function Home({ go, people }) {
       <div className="hero-scrim" />
       <Particles className="hero-canvas" density={26} confetti />
       <div className="shell hero-in focus-in">
-        <Logo height={64} style={{ margin: "0 auto 18px" }} />
         <span className="hero-eyebrow"><span className="live-dot" />RSVP is open</span>
-        <h1 className="focus-title">{EVENT.name} {EVENT.year}</h1>
+        <h1 className="focus-title"><Badge height={170} style={{ margin: "0 auto", maxWidth: "100%", objectFit: "contain" }} /></h1>
         <p className="focus-meta">{EVENT.dateLong}<br />{EVENT.venue}</p>
         <div className="focus-cta">
           <button className="btn btn-xl" onClick={() => go("rsvp")}>RSVP now <span className="btn-arrow">&rarr;</span></button>
@@ -953,8 +955,7 @@ function Scores({ totals, standings, go, arg }) {
             </div>
           </div>
           <div className="board-brand">
-            <Logo height={34} />
-            <span className="brand-sub">HOUSE CHALLENGE {EVENT.year}</span>
+            <Badge height={44} />
           </div>
         </div>
 
