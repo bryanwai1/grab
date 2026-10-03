@@ -1,28 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import QRCode from "qrcode";
+import jsQR from "jsqr";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ADMIN_PASSWORD, STAFF_PIN } from "./config";
+import * as db from "./store";
 
-const EVENT = {
-  name: "Grab House Challenge",
-  year: "2026",
-  dateLong: "Saturday, 14 March 2026",
-  dateShort: "14 Mar 2026",
-  venue: "Grab Malaysia HQ, Petaling Jaya",
-};
-
-const HOUSES = [
-  { key: "red", name: "Red", hex: "#E8382F", members: 62 },
-  { key: "blue", name: "Blue", hex: "#0B7FD4", members: 58 },
-  { key: "yellow", name: "Yellow", hex: "#F2A900", members: 61 },
-  { key: "purple", name: "Purple", hex: "#7B3FE4", members: 57 },
-  { key: "green", name: "Green", hex: "#00B14F", members: 24, committee: true },
-];
-
-const CHALLENGES = [
-  { key: "fitness", name: "Fitness Challenge", type: "time", metric: "time", metricNote: "Best combined time - fastest wins", blurb: "Six timed stations - rowing, box jumps, battle ropes, wall balls, sled push and the plank hold. The clock runs from the first rep to the last.", venue: "Hall A, East Deck", time: "09:30", lead: true },
-  { key: "obstacle", name: "Obstacles", type: "points", metric: "points", metricNote: "Time-adjusted points", blurb: "A 400 m team course. Fastest clean run per wave scores highest.", venue: "Outdoor Field", time: "11:15" },
-  { key: "bingo", name: "Bingo Dash", type: "points", metric: "squares", metricNote: "Squares completed of 24", blurb: "Twenty-four squares hidden across the campus. Scan to claim.", venue: "Level 3 Atrium", time: "14:00" },
-];
-
-const RANK_POINTS = [5, 4, 3, 2, 1];
+/* ================= helpers ================= */
 
 function fmtTime(cs) {
   if (cs === null || cs === undefined || cs === Infinity) return "--:--:--";
@@ -41,55 +23,35 @@ function parseTime(str) {
 }
 
 const showValue = (ch, v) => (ch.type === "time" ? fmtTime(v) : String(v));
-
-const ITINERARY = [
-  { time: "08:00", name: "Doors open and check-in", note: "Scan your QR at the lobby desk. Grab your house band." },
-  { time: "09:00", name: "Opening and house call", note: "Main Hall. All five houses assemble." },
-  { time: "09:30", name: "Fitness Challenge", note: "Hall A, East Deck - waves 1 to 4." },
-  { time: "11:15", name: "Obstacles", note: "Outdoor Field. Wet shoes guaranteed." },
-  { time: "12:45", name: "Lunch", note: "Level 1 canteen and the food trucks out front." },
-  { time: "14:00", name: "Bingo Dash", note: "Campus-wide. Ends the moment the horn goes." },
-  { time: "16:00", name: "Prize giving", note: "Three winners - one per challenge. Main Hall." },
-];
-
-const NOW_INDEX = 2;
-
-const SEED_PEOPLE = [
-  { id: "P001", name: "Nurul Aisyah binti Rahman", email: "nurul.aisyah@grab.com", staffNo: "GRB1042", house: "red", category: "participant", token: "GHC-4RD1", challenges: ["fitness", "bingo"], wave: 2, checkedIn: true },
-  { id: "P002", name: "Tan Wei Sheng", email: "weisheng.tan@grab.com", staffNo: "GRB1088", house: "blue", category: "participant", token: "GHC-8BL7", challenges: ["obstacle", "bingo"], wave: 1, checkedIn: true },
-  { id: "P003", name: "Kavitha Ramachandran", email: "kavitha.r@grab.com", staffNo: "GRB1120", house: "yellow", category: "participant", token: "GHC-2YL9", challenges: ["fitness", "obstacle"], wave: 3, checkedIn: false },
-  { id: "P004", name: "Danish Iskandar", email: "danish.iskandar@grab.com", staffNo: "GRB1165", house: "purple", category: "participant", token: "GHC-6PR3", challenges: ["fitness", "obstacle", "bingo"], wave: 1, checkedIn: true },
-  { id: "P005", name: "Chan Li Mei", email: "limei.chan@grab.com", staffNo: "GRB1201", house: "green", category: "committee", token: "GHC-1GR5", challenges: [], wave: null, checkedIn: true },
-  { id: "P006", name: "Arjun Selvaraj", email: "arjun.s@grab.com", staffNo: "GRB1233", house: "blue", category: "spectator", token: "GHC-9BL2", challenges: [], wave: null, checkedIn: false },
-];
-
-const SEED_SCORES = [
-  { id: 1, challenge: "fitness", house: "purple", points: 25205, note: "Wave 1 clean", by: "Marshal A" },
-  { id: 2, challenge: "fitness", house: "red", points: 31244, note: "Wave 2", by: "Marshal A" },
-  { id: 3, challenge: "fitness", house: "blue", points: 29010, note: "Wave 1", by: "Marshal A" },
-  { id: 4, challenge: "fitness", house: "yellow", points: 40312, note: "Wave 3", by: "Marshal A" },
-  { id: 5, challenge: "fitness", house: "green", points: 22521, note: "Committee run", by: "Marshal A" },
-  { id: 6, challenge: "obstacle", house: "yellow", points: 510, note: "Clean run 4:12", by: "Marshal B" },
-  { id: 7, challenge: "obstacle", house: "blue", points: 480, note: "Clean run 4:31", by: "Marshal B" },
-  { id: 8, challenge: "obstacle", house: "green", points: 415, note: "One penalty", by: "Marshal B" },
-  { id: 9, challenge: "obstacle", house: "purple", points: 375, note: "Two penalties", by: "Marshal B" },
-  { id: 10, challenge: "obstacle", house: "red", points: 330, note: "Three penalties", by: "Marshal B" },
-  { id: 11, challenge: "bingo", house: "red", points: 19, note: "", by: "Marshal C" },
-  { id: 12, challenge: "bingo", house: "green", points: 17, note: "", by: "Marshal C" },
-  { id: 13, challenge: "bingo", house: "purple", points: 15, note: "", by: "Marshal C" },
-  { id: 14, challenge: "bingo", house: "yellow", points: 12, note: "", by: "Marshal C" },
-  { id: 15, challenge: "bingo", house: "blue", points: 10, note: "", by: "Marshal C" },
-];
-
 const houseOf = (k) => HOUSES.find((h) => h.key === k) || HOUSES[0];
 const challengeOf = (k) => CHALLENGES.find((c) => c.key === k) || CHALLENGES[0];
-const qrSrc = (token, size) => {
-  const s = size || 220;
-  return "https://api.qrserver.com/v1/create-qr-code/?size=" + s + "x" + s + "&margin=0&data=" + encodeURIComponent(token);
-};
 const BG = (n) => ({ backgroundImage: "url(" + (process.env.PUBLIC_URL || "") + "/" + n + ")" });
 const calmMotion = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+const stamp = (iso) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
+
+/* ================= routing (hash based, so pass links survive a refresh) ================= */
+
+function readRoute() {
+  const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+  return { page: parts[0] || "home", arg: parts[1] ? decodeURIComponent(parts[1]) : "" };
+}
+
+function useRoute() {
+  const [route, setRoute] = useState(readRoute);
+  useEffect(() => {
+    const on = () => setRoute(readRoute());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  const go = useCallback((page, arg) => {
+    window.location.hash = "/" + page + (arg ? "/" + encodeURIComponent(arg) : "");
+    window.scrollTo({ top: 0, behavior: calmMotion() ? "auto" : "smooth" });
+  }, []);
+  return [route, go];
+}
 
 /* ================= particle canvas ================= */
 
@@ -168,22 +130,6 @@ function Particles({ className, density = 34, confetti = false }) {
 
 /* ================= hooks ================= */
 
-function useReveal() {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (calmMotion()) { el.querySelectorAll(".reveal").forEach((n) => n.classList.add("in")); return; }
-    const io = new IntersectionObserver(
-      (es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
-      { threshold: 0.12, rootMargin: "0px 0px -50px 0px" }
-    );
-    el.querySelectorAll(".reveal").forEach((n) => io.observe(n));
-    return () => io.disconnect();
-  }, []);
-  return ref;
-}
-
 function useCountUp(target, ms) {
   const [v, setV] = useState(target);
   const from = useRef(target);
@@ -212,30 +158,28 @@ function Counter({ value, className, style }) {
 
 /* ================= brand ================= */
 
-function GrabMark({ size = 20, color = "#fff" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 15.5c0-4.7 3.6-8 8.2-8 3.3 0 5.6 1.6 6.6 3.6l-3 1.5c-.6-1.2-1.9-2-3.6-2-2.6 0-4.5 1.9-4.5 4.9v2.9H4v-2.9Z" fill={color} />
-      <circle cx="16.6" cy="17.3" r="2.4" fill={color} />
-    </svg>
-  );
+const LOGO = (process.env.PUBLIC_URL || "") + "/grab-logo.png";
+const LOGO_WHITE = (process.env.PUBLIC_URL || "") + "/grab-logo-white.png";
+const BADGE = (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png";
+function Badge({ height = 40, style }) {
+  return <img src={BADGE} alt="Grab MY Hari Sukan 2026" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
+}
+function Logo({ white, height = 30, style }) {
+  return <img src={white ? LOGO_WHITE : LOGO} alt="Grab" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
 }
 
 function Nav({ page, go }) {
-  const items = [["home","Home"],["register","Register"],["invite","Invite"],["checkin","Check-in"],["scores","Live scores"],["admin","Admin"]];
+  const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["scores", "Live scores"], ["staff", "Staff"], ["admin", "Admin"]];
+  const active = page === "checkin" || page === "gift" ? "staff" : page;
   return (
     <nav className="nav">
       <div className="shell nav-in">
         <button className="brand" onClick={() => go("home")}>
-          <span className="brand-mark"><GrabMark /></span>
-          <span style={{ textAlign: "left" }}>
-            <span className="wordmark">Grab</span>
-            <span className="brand-sub">HOUSE CHALLENGE</span>
-          </span>
+          <Badge height={40} />
         </button>
         <div className="nav-links">
           {items.map(([k, label]) => (
-            <button key={k} className="nav-link" aria-current={page === k ? "page" : undefined} onClick={() => go(k)}>{label}</button>
+            <button key={k} className={"nav-link" + (k === "rsvp" ? " nav-cta" : "")} aria-current={active === k ? "page" : undefined} onClick={() => go(k)}>{label}</button>
           ))}
         </div>
       </div>
@@ -244,8 +188,8 @@ function Nav({ page, go }) {
 }
 
 function Ticker({ totals, go }) {
-  const now = ITINERARY[NOW_INDEX];
-  const next = ITINERARY[NOW_INDEX + 1];
+  const now = ITINERARY[2];
+  const next = ITINERARY[3];
   return (
     <div className="ticker">
       <div className="shell ticker-in">
@@ -270,388 +214,532 @@ function Ticker({ totals, go }) {
   );
 }
 
-/* ================= home ================= */
+/* ================= QR ================= */
 
-function Home({ go, people, totals }) {
-  const wrap = useReveal();
-  const counts = useMemo(() => {
-    const m = {};
-    HOUSES.forEach((h) => (m[h.key] = h.members));
-    people.forEach((p) => { if (!SEED_PEOPLE.find((s) => s.id === p.id)) m[p.house] = (m[p.house] || 0) + 1; });
-    return m;
-  }, [people]);
-  const totalPeople = HOUSES.reduce((a, h) => a + counts[h.key], 0);
-  const checked = people.filter((p) => p.checkedIn).length;
-  const routeFill = ((NOW_INDEX + 0.5) / ITINERARY.length) * 100 + "%";
+function QrImg({ token, size = 220, className, style }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let live = true;
+    QRCode.toDataURL(passUrl(token), { width: size * 2, margin: 1, color: { dark: "#06180e", light: "#ffffff" } })
+      .then((u) => live && setSrc(u))
+      .catch(() => {});
+    return () => { live = false; };
+  }, [token, size]);
+  return src
+    ? <img src={src} width={size} height={size} alt={"QR pass " + token} className={className} style={{ borderRadius: 14, ...style }} />
+    : <div style={{ width: size, height: size, borderRadius: 14, background: "var(--paper-2)", ...style }} />;
+}
+
+async function downloadPass(person) {
+  const h = houseOf(person.house);
+  const qr = await QRCode.toDataURL(passUrl(person.token), { width: 640, margin: 1 });
+  const img = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = qr; });
+  const W = 900, H = 1300;
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const x = cv.getContext("2d");
+  x.fillStyle = "#ffffff"; x.fillRect(0, 0, W, H);
+  x.fillStyle = h.hex; x.fillRect(0, 0, W, 250);
+  x.fillStyle = "#fff";
+  x.font = "600 34px Archivo, Arial, sans-serif"; x.fillText(EVENT.name.toUpperCase() + " " + EVENT.year, 60, 90);
+  x.font = "800 86px Archivo, Arial, sans-serif"; x.fillText("House " + h.name, 60, 195);
+  x.drawImage(img, 130, 310, 640, 640);
+  x.fillStyle = "#06180e"; x.textAlign = "center";
+  x.font = "800 52px Archivo, Arial, sans-serif"; x.fillText(person.name, W / 2, 1040, W - 80);
+  x.font = "500 34px Archivo, Arial, sans-serif"; x.fillStyle = "#2b4235";
+  x.fillText(person.department + "  -  " + person.token, W / 2, 1100, W - 80);
+  x.fillText(EVENT.dateLong, W / 2, 1170, W - 80);
+  x.fillText(EVENT.venue, W / 2, 1220, W - 80);
+  const a = document.createElement("a");
+  a.href = cv.toDataURL("image/png");
+  a.download = "grab-pass-" + person.token + ".png";
+  a.click();
+}
+
+/* ================= slide to claim ================= */
+
+function SlideToClaim({ label = "Slide to claim", onComplete, disabled }) {
+  const track = useRef(null);
+  const [x, setX] = useState(0);
+  const [drag, setDrag] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const start = useRef(0);
+  const max = () => (track.current ? track.current.clientWidth - 64 : 1);
+
+  const down = (e) => {
+    if (disabled || busy) return;
+    setDrag(true);
+    start.current = e.clientX - x;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const move = (e) => {
+    if (!drag) return;
+    setX(Math.max(0, Math.min(max(), e.clientX - start.current)));
+  };
+  const up = async () => {
+    if (!drag) return;
+    setDrag(false);
+    if (x >= max() * 0.9) {
+      setX(max());
+      setBusy(true);
+      try { await onComplete(); } finally { setBusy(false); setX(0); }
+    } else setX(0);
+  };
+  const pct = x / Math.max(1, max());
 
   return (
-    <div ref={wrap}>
-      <header className="hero">
-        <div className="hero-img only-landscape" style={BG("bg-hero.jpg")} />
-        <div className="hero-img only-portrait" style={BG("bg-hero-p.jpg")} />
-        <div className="hero-scrim" />
-        <div className="hero-rays" />
-        <Particles className="hero-canvas" density={40} confetti />
-        <div className="shell hero-in">
-          <span className="hero-eyebrow">
-            <span className="live-dot" />
-            Registration is open
-          </span>
-          <h1>
-            <span>Five houses.</span>
-            <span>Three challenges.</span>
-            <span>One epic Saturday.</span>
-          </h1>
-          <p className="hero-sub">
-            {EVENT.dateLong} at {EVENT.venue}. Pick your colour, show up, and let the scoreboard do the talking.
-          </p>
-          <div className="hero-cta">
-            <button className="btn" onClick={() => go("register")}>Register your spot <span className="btn-arrow">&rarr;</span></button>
-            <button className="btn btn-ghost" onClick={() => go("scores")}>Watch live scores</button>
-          </div>
-          <div className="hero-flags">
-            {HOUSES.map((h, i) => (
-              <span key={h.key} className="flag" style={{ background: h.hex, animationDelay: i * 0.22 + "s" }} />
-            ))}
-          </div>
-        </div>
-        <div className="stat-band">
-          <div className="stat"><div className="num stat-v"><Counter value={totalPeople} /></div><div className="stat-l">signed up</div></div>
-          <div className="stat"><div className="num stat-v"><Counter value={checked} /></div><div className="stat-l">checked in</div></div>
-          <div className="stat"><div className="num stat-v">3</div><div className="stat-l">separate scoreboards</div></div>
-          <div className="stat"><div className="num stat-v">5</div><div className="stat-l">houses in play</div></div>
-        </div>
-      </header>
-
-      <section className="section bg-soft">
-        <div className="shell">
-          <div className="section-head reveal">
-            <h2>The three challenges</h2>
-            <p className="lede">Every challenge keeps its own scoreboard. Nothing gets added together, so you can win the obstacle course and still come last at bingo.</p>
-          </div>
-          <div className="chal-grid">
-            {CHALLENGES.map((c, i) => {
-              const lead = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
-                .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))[0];
-              return (
-                <article key={c.key} className={"chal reveal pop d" + (i + 1) + (c.lead ? " chal-lead" : "")}>
-                  <div>
-                    <div className="chal-name">{c.name}</div>
-                    <p className="chal-blurb">{c.blurb}</p>
-                  </div>
-                  <div>
-                    <div className="chal-meta">
-                      <span>{c.time}</span><span>{c.venue}</span><span>Scored in {c.metric}</span>
-                    </div>
-                    <div className="chal-lead-line">
-                      <span className="chip-dot" style={{ background: lead.h.hex }} />
-                      {lead.h.name} leads on <span className="num">{showValue(c, lead.v)}</span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="section" style={{ background: "var(--ink)", position: "relative", overflow: "hidden" }}>
-        <div className="bg-mesh" />
-        <div className="shell" style={{ position: "relative", zIndex: 1 }}>
-          <div className="section-head reveal" style={{ color: "#fff" }}>
-            <h2>Pick a side</h2>
-            <p className="lede" style={{ color: "#a9c1b4" }}>Your house is set at registration and locked for the day. Green is the committee - they run the event and still put points on the board.</p>
-          </div>
-          <div className="house-strip">
-            {HOUSES.map((h, i) => (
-              <div key={h.key} className={"house-tile reveal pop d" + (i + 1)} style={{ background: h.hex }}>
-                <div className="h-name">{h.name}</div>
-                <div>
-                  <div className="num" style={{ fontSize: 36 }}><Counter value={counts[h.key]} /></div>
-                  <div className="h-count">{h.committee ? "committee" : "members"}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="section bg-soft">
-        <div className="shell split" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 44 }}>
-          <div className="reveal">
-            <h2 style={{ fontSize: 36, marginBottom: 8 }}>How the day runs</h2>
-            <p className="lede" style={{ marginBottom: 24 }}>One route, seven stops. Your QR tells you exactly which waves you are in.</p>
-            <div className="route" style={{ "--route-fill": routeFill }}>
-              {ITINERARY.map((s, i) => (
-                <div key={s.time} className={"stop" + (i < NOW_INDEX ? " stop-done" : i === NOW_INDEX ? " stop-live" : "")}>
-                  <div className="stop-time">{s.time}</div>
-                  <div className="stop-name">{s.name}</div>
-                  <div className="stop-note">{s.note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="reveal d2">
-            <div className="panel" style={{ position: "sticky", top: 100 }}>
-              <h3 style={{ fontSize: 24, marginBottom: 12 }}>Bring your QR</h3>
-              <p style={{ color: "var(--ink-2)", fontSize: 15.5 }}>
-                It lands in your inbox a week before. Screenshot it - the lobby signal is patchy and the queue moves fast.
-              </p>
-              <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn btn-sm" onClick={() => go("register")}>Register</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => go("invite")}>Preview the invite</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+    <div ref={track} className={"slider" + (disabled ? " slider-off" : "")}>
+      <span className="slider-fill" style={{ width: x + 64 }} />
+      <span className="slider-label" style={{ opacity: 1 - pct }}>{busy ? "Claiming..." : label}</span>
+      <button
+        type="button" aria-label={label} className="slider-knob"
+        style={{ transform: "translateX(" + x + "px)", transition: drag ? "none" : "transform .35s var(--bounce)" }}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+        onKeyDown={(e) => { if (!disabled && !busy && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onComplete(); } }}
+      >&rarr;</button>
     </div>
   );
 }
 
-/* ================= register ================= */
+/* ================= camera scanner ================= */
 
-function Register({ addPerson, go }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [staffNo, setStaffNo] = useState("");
-  const [house, setHouse] = useState("");
-  const [category, setCategory] = useState("participant");
-  const [picked, setPicked] = useState(["fitness", "obstacle", "bingo"]);
-  const [err, setErr] = useState("");
-  const [done, setDone] = useState(null);
+function Scanner({ onCode, busy }) {
+  const video = useRef(null);
+  const canvas = useRef(null);
+  const [on, setOn] = useState(false);
+  const [camErr, setCamErr] = useState("");
+  const [code, setCode] = useState("");
+  const last = useRef({ v: "", t: 0 });
+  const cb = useRef(onCode);
+  cb.current = onCode;
 
-  const toggleChallenge = (k) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const stop = useCallback(() => {
+    const v = video.current;
+    if (v && v.srcObject) { v.srcObject.getTracks().forEach((t) => t.stop()); v.srcObject = null; }
+    setOn(false);
+  }, []);
 
-  const submit = () => {
-    if (!name.trim()) return setErr("Enter your full name.");
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setErr("Enter a valid work email.");
-    if (!house) return setErr("Pick a house.");
-    setErr("");
-    const token = "GHC-" + Math.random().toString(36).slice(2, 6).toUpperCase();
-    const person = {
-      id: "P" + Math.floor(Math.random() * 9000 + 1000),
-      name: name.trim(), email: email.trim(), staffNo: staffNo.trim() || "-",
-      house, category, token,
-      challenges: category === "participant" ? picked : [],
-      wave: category === "participant" ? 1 + Math.floor(Math.random() * 4) : null,
-      checkedIn: false,
-    };
-    addPerson(person);
-    setDone(person);
+  const start = async () => {
+    setCamErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.current.srcObject = stream;
+      await video.current.play();
+      setOn(true);
+    } catch (e) {
+      setCamErr("Camera not available. Allow camera access or type the pass code below.");
+    }
   };
 
-  if (done) {
-    const h = houseOf(done.house);
-    return (
-      <div className="shell section" style={{ maxWidth: 640 }}>
-        <div className="trip">
-          <div className="trip-band" style={{ background: h.hex }}>
-            <div>
-              <div style={{ fontSize: 13, opacity: 0.9 }}>You are in</div>
-              <div className="wide" style={{ fontSize: 33, fontWeight: 700 }}>House {h.name}</div>
-            </div>
-            <GrabMark size={28} />
+  useEffect(() => () => stop(), [stop]);
+
+  useEffect(() => {
+    if (!on) return;
+    let raf;
+    const tick = () => {
+      const v = video.current, c = canvas.current;
+      if (v && c && v.readyState === v.HAVE_ENOUGH_DATA) {
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        const hit = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "dontInvert" });
+        const t = Date.now();
+        if (hit && hit.data && (hit.data !== last.current.v || t - last.current.t > 4000)) {
+          last.current = { v: hit.data, t };
+          if (navigator.vibrate) navigator.vibrate(80);
+          cb.current(hit.data);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [on]);
+
+  return (
+    <div className="panel">
+      <div className="scan-view">
+        <video ref={video} playsInline muted className="scan-video" style={{ opacity: on ? 1 : 0 }} />
+        <canvas ref={canvas} style={{ display: "none" }} />
+        {on ? <span className="scan-frame" /> : (
+          <div className="scan-idle">
+            <Logo white height={40} />
+            <span>Point the camera at the guest's QR pass</span>
           </div>
-          <div className="trip-body">
-            <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <img src={qrSrc(done.token)} width="132" height="132" alt={"QR code for " + done.token} style={{ borderRadius: 14, flex: "none" }} />
-              <div style={{ flex: 1, minWidth: 210 }}>
-                <div className="kv"><span>Name</span><span>{done.name}</span></div>
-                <div className="kv"><span>Pass</span><span>{done.token}</span></div>
-                <div className="kv"><span>Role</span><span style={{ textTransform: "capitalize" }}>{done.category}</span></div>
-                <div className="kv"><span>Challenges</span><span>{done.challenges.length ? done.challenges.map((k) => challengeOf(k).name).join(", ") : "Spectating"}</span></div>
-              </div>
-            </div>
-            <p className="hint" style={{ marginTop: 18 }}>A copy is on its way to {done.email}. Show this at the lobby desk on {EVENT.dateShort}.</p>
-            <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button className="btn btn-ink btn-sm" onClick={() => go("invite")}>See the full invite</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setDone(null)}>Register someone else</button>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
-    );
-  }
+      <button className={"btn" + (on ? " btn-ghost" : "")} style={{ width: "100%", marginTop: 14 }} onClick={on ? stop : start}>
+        {on ? "Stop camera" : "Start camera"}
+      </button>
+      {camErr && <p className="err" style={{ marginTop: 10 }}>{camErr}</p>}
+      <div className="manual">
+        <input className="input" value={code} onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && code.trim()) { onCode(code); setCode(""); } }}
+          placeholder="Or type code, e.g. GRB-7K2QXM" />
+        <button className="btn btn-ink" disabled={busy || !code.trim()} onClick={() => { onCode(code); setCode(""); }}>Look up</button>
+      </div>
+    </div>
+  );
+}
+
+/* ================= home ================= */
+
+function Home({ go, people }) {
+  let saved = null;
+  try { saved = localStorage.getItem("grab_my_pass"); } catch (e) { /* ignore */ }
+  return (
+    <header className="hero hero-focus">
+      <div className="hero-img only-landscape" style={BG("bg-hero.jpg")} />
+      <div className="hero-img only-portrait" style={BG("bg-hero-p.jpg")} />
+      <div className="hero-scrim" />
+      <Particles className="hero-canvas" density={26} confetti />
+      <div className="shell hero-in focus-in">
+        <span className="hero-eyebrow"><span className="live-dot" />RSVP is open</span>
+        <h1 className="focus-title"><Badge height={170} style={{ margin: "0 auto", maxWidth: "100%", objectFit: "contain" }} /></h1>
+        <p className="focus-meta">{EVENT.dateLong}<br />{EVENT.venue}</p>
+        <div className="focus-cta">
+          <button className="btn btn-xl" onClick={() => go("rsvp")}>RSVP now <span className="btn-arrow">&rarr;</span></button>
+          <button className="btn btn-ghost" onClick={() => go("pass", saved || "")}>{saved ? "Open my pass" : "Already RSVP'd? Find my pass"}</button>
+        </div>
+        <div className="focus-houses">
+          {HOUSES.map((h) => <span key={h.key} className="focus-house" style={{ background: h.hex }}>{h.name}</span>)}
+        </div>
+        <p className="focus-count"><span className="num">{people.length}</span> colleagues have RSVP'd</p>
+      </div>
+    </header>
+  );
+}
+
+/* ================= RSVP ================= */
+
+function Rsvp({ go }) {
+  const [f, setF] = useState({ name: "", department: "", email: "", house: "", phone: "" });
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e && e.target ? e.target.value : e })); if (err) setErr(""); };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!f.name.trim()) return setErr("Enter your full name.");
+    if (!f.department) return setErr("Select your department.");
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) return setErr("Enter a valid email.");
+    if (!f.house) return setErr("Select your house.");
+    if (f.phone.replace(/\D/g, "").length < 8) return setErr("Enter a valid phone number.");
+    setBusy(true);
+    try {
+      const { person, duplicate } = await db.register(f);
+      if (!duplicate) {
+        const h = houseOf(person.house);
+        fetch("/api/send-email", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: person.email, name: person.name, token: person.token, house: h.name, houseHex: h.hex, department: person.department, passUrl: passUrl(person.token), event: EVENT }),
+        }).catch(() => {});
+      }
+      try { localStorage.setItem("grab_my_pass", person.token); } catch (x) { /* ignore */ }
+      go("pass", person.token + (duplicate ? "~dup" : "~new"));
+    } catch (x) {
+      setErr("Could not save your RSVP. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="shell section" style={{ maxWidth: 640 }}>
-      <h1 style={{ fontSize: 46, marginBottom: 10 }}>Register</h1>
-      <p className="lede" style={{ marginBottom: 30 }}>Two minutes, and your QR pass lands in your inbox straight away.</p>
-      <div className="panel">
+      <span className="eyebrow-pill"><span className="live-dot" /> {EVENT.dateShort} - {EVENT.venue}</span>
+      <h1 style={{ fontSize: 46, margin: "14px 0 10px" }}>RSVP</h1>
+      <p className="lede" style={{ marginBottom: 30 }}>Under a minute. Your QR pass appears straight after and a copy goes to your inbox.</p>
+      <form className="panel" onSubmit={submit} noValidate>
         <label className="field"><span className="field-label">Full name</span>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nurul Aisyah binti Rahman" /></label>
-        <label className="field"><span className="field-label">Work email</span>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@grab.com" /></label>
-        <label className="field"><span className="field-label">Staff number</span>
-          <input className="input" value={staffNo} onChange={(e) => setStaffNo(e.target.value)} placeholder="GRB1042" /></label>
+          <input className="input" value={f.name} onChange={set("name")} autoComplete="name" placeholder="Nurul Aisyah binti Rahman" /></label>
+        <label className="field"><span className="field-label">Department</span>
+          <select className="input" value={f.department} onChange={set("department")}>
+            <option value="" disabled>Select your department</option>
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select></label>
+        <label className="field"><span className="field-label">Email</span>
+          <input className="input" type="email" value={f.email} onChange={set("email")} autoComplete="email" placeholder="name@grab.com" /></label>
         <div className="field">
-          <span className="field-label">House</span>
-          <div className="picker">
+          <span className="field-label">Your house</span>
+          <div className="house-pick">
             {HOUSES.map((h) => (
-              <button key={h.key} className="chip" aria-pressed={house === h.key} onClick={() => setHouse(h.key)}>
-                <span className="chip-dot" style={{ background: h.hex }} />{h.name}{h.committee ? " (committee)" : ""}
+              <button type="button" key={h.key} className="house-opt" aria-pressed={f.house === h.key}
+                style={{ "--h": h.hex }} onClick={() => set("house")(h.key)}>
+                <span className="house-swatch" />{h.name}
               </button>
             ))}
           </div>
         </div>
-        <div className="field">
-          <span className="field-label">Taking part as</span>
-          <div className="picker">
-            {["participant", "committee", "spectator"].map((c) => (
-              <button key={c} className="chip" aria-pressed={category === c} onClick={() => setCategory(c)} style={{ textTransform: "capitalize" }}>{c}</button>
-            ))}
-          </div>
-          <p className="hint">Spectators still get a QR - it opens the schedule and the viewing areas.</p>
-        </div>
-        {category === "participant" && (
-          <div className="field">
-            <span className="field-label">Challenges you want in on</span>
-            <div className="picker">
-              {CHALLENGES.map((c) => (
-                <button key={c.key} className="chip" aria-pressed={picked.includes(c.key)} onClick={() => toggleChallenge(c.key)}>{c.name}</button>
-              ))}
-            </div>
-            <p className="hint">Waves are assigned by the committee once registration closes.</p>
-          </div>
-        )}
+        <label className="field"><span className="field-label">Phone number</span>
+          <input className="input" type="tel" inputMode="tel" value={f.phone} onChange={set("phone")} autoComplete="tel" placeholder="+60 12-345 6789" /></label>
         {err && <p className="err">{err}</p>}
-        <button className="btn" style={{ marginTop: 14, width: "100%" }} onClick={submit}>Get my QR pass</button>
-      </div>
+        <button className="btn" type="submit" disabled={busy} style={{ marginTop: 14, width: "100%" }}>
+          {busy ? "Saving..." : <>Confirm my RSVP <span className="btn-arrow">&rarr;</span></>}
+        </button>
+        <p className="hint" style={{ marginTop: 14, textAlign: "center" }}>
+          Already RSVP'd? <button type="button" className="linkish" onClick={() => go("pass")}>Find your pass</button>
+        </p>
+      </form>
     </div>
   );
 }
 
-/* ================= invite ================= */
+/* ================= pass ================= */
 
-function Invite({ go }) {
-  const demo = SEED_PEOPLE[0];
-  const h = houseOf(demo.house);
+function FindPass({ go, note }) {
+  const [email, setEmail] = useState("");
+  const [err, setErr] = useState(note || "");
+  const [busy, setBusy] = useState(false);
+  let saved = null;
+  try { saved = localStorage.getItem("grab_my_pass"); } catch (e) { /* ignore */ }
+
+  const find = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return setErr("Enter the email you RSVP'd with.");
+    setBusy(true);
+    try {
+      const p = await db.findByEmail(email);
+      if (p) go("pass", p.token);
+      else setErr("No RSVP found for that email.");
+    } catch (x) { setErr("Could not look that up. Try again."); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <div className="shell section" style={{ maxWidth: 720 }}>
-      <h1 style={{ fontSize: 46, marginBottom: 10 }}>The teaser email</h1>
-      <p className="lede" style={{ marginBottom: 30 }}>Sent one week out, then again the night before. This is the exact layout.</p>
-      <div className="trip">
-        <div className="trip-band" style={{ background: "var(--ink)" }}>
-          <span className="brand-mark" style={{ animation: "none" }}><GrabMark /></span>
-          <div style={{ marginRight: "auto", marginLeft: 13 }}>
-            <div className="wide" style={{ fontSize: 21, fontWeight: 700 }}>{EVENT.name} {EVENT.year}</div>
-            <div style={{ fontSize: 13, color: "#8fa89a" }}>{EVENT.dateLong}</div>
+    <div className="shell section" style={{ maxWidth: 560 }}>
+      <h1 style={{ fontSize: 46, marginBottom: 10 }}>My pass</h1>
+      <p className="lede" style={{ marginBottom: 28 }}>Enter the email you used to RSVP and we will pull up your QR.</p>
+      <form className="panel" onSubmit={find}>
+        <label className="field"><span className="field-label">Email</span>
+          <input className="input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="name@grab.com" /></label>
+        {err && <p className="err">{err}</p>}
+        <button className="btn" style={{ width: "100%", marginTop: 8 }} disabled={busy}>{busy ? "Looking..." : "Show my pass"}</button>
+        {saved && <button type="button" className="btn btn-ghost" style={{ width: "100%", marginTop: 10 }} onClick={() => go("pass", saved)}>Open the pass saved on this phone</button>}
+        <p className="hint" style={{ marginTop: 14, textAlign: "center" }}>Not registered yet? <button type="button" className="linkish" onClick={() => go("rsvp")}>RSVP here</button></p>
+      </form>
+    </div>
+  );
+}
+
+function StatusRow({ person }) {
+  return (
+    <div className="status-row">
+      <span className={"status" + (person.checkedInAt ? " status-ok" : "")}>
+        {person.checkedInAt ? "Checked in " + clock(person.checkedInAt) : "Not checked in"}
+      </span>
+      <span className={"status" + (person.giftClaimedAt ? " status-gift" : "")}>
+        {person.giftClaimedAt ? "Gift claimed " + clock(person.giftClaimedAt) : "Gift not claimed"}
+      </span>
+    </div>
+  );
+}
+
+function Pass({ arg, people, go, toast }) {
+  const [token, flag] = arg.split("~");
+  const person = people.find((p) => p.token === db.normToken(token));
+  if (!token) return <FindPass go={go} />;
+  if (!person) return <FindPass go={go} note="That pass code was not found." />;
+  const h = houseOf(person.house);
+
+  const claim = async () => {
+    const r = await db.claimGift(person.token);
+    if (r.ok) toast("Door gift claimed. Enjoy!", "ok");
+    else if (r.already) toast("This pass has already claimed its gift.", "bad");
+    else if (r.notCheckedIn) toast("Check in at the lobby first.", "bad");
+  };
+
+  return (
+    <div className="shell section" style={{ maxWidth: 640 }}>
+      {flag === "new" && <div className="banner banner-ok">You're in, {person.name.split(" ")[0]}! Save this pass - a copy is on its way to {person.email}.</div>}
+      {flag === "dup" && <div className="banner">This email has already RSVP'd. Here is the existing pass.</div>}
+      <div className="trip pass-card">
+        <div className="trip-band" style={{ background: h.hex }}>
+          <div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>{EVENT.name} {EVENT.year}</div>
+            <div className="wide" style={{ fontSize: 33, fontWeight: 700 }}>House {h.name}</div>
           </div>
+          <Logo white height={26} />
         </div>
         <div className="trip-body">
-          <h2 style={{ fontSize: 33, marginBottom: 12 }}>See you Saturday, {demo.name.split(" ")[0]}.</h2>
-          <p style={{ color: "var(--ink-2)", maxWidth: "58ch" }}>
-            You are in House {h.name}. Doors open at 08:00 and the opening call is 09:00 sharp - houses get counted, so being late costs your side.
-          </p>
-          <div style={{ display: "flex", gap: 28, marginTop: 28, flexWrap: "wrap" }}>
-            <div style={{ flex: "none", textAlign: "center" }}>
-              <img src={qrSrc(demo.token)} width="152" height="152" alt="Entry QR code" style={{ borderRadius: 14 }} />
-              <div className="num" style={{ fontSize: 15, marginTop: 9 }}>{demo.token}</div>
-            </div>
-            <div style={{ flex: 1, minWidth: 240 }}>
-              <div className="route" style={{ "--route-fill": "0%" }}>
-                {ITINERARY.slice(0, 5).map((s) => (
-                  <div key={s.time} className="stop" style={{ padding: "10px 0" }}>
-                    <div className="stop-time">{s.time}</div>
-                    <div className="stop-name" style={{ fontSize: 16.5 }}>{s.name}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="pass-qr">
+            <QrImg token={person.token} size={220} />
+            <div className="num pass-token">{person.token}</div>
           </div>
-          <div style={{ marginTop: 26, padding: 20, borderRadius: 18, background: "var(--grab-wash)" }}>
-            <strong>What to bring</strong>
-            <p style={{ color: "var(--ink-2)", fontSize: 15, marginTop: 5 }}>Sportswear in your house colour, a towel, a refillable bottle, and this QR. Lockers are on Level 1.</p>
+          <StatusRow person={person} />
+          <div className="kv"><span>Name</span><span>{person.name}</span></div>
+          <div className="kv"><span>Department</span><span>{person.department}</span></div>
+          <div className="kv"><span>Email</span><span>{person.email}</span></div>
+          <div className="kv"><span>Phone</span><span>{person.phone}</span></div>
+          <div className="kv"><span>When</span><span>{EVENT.dateShort}, doors {EVENT.doorsOpen}</span></div>
+
+          <div className="gift-box">
+            <strong>{EVENT.gift}</strong>
+            {person.giftClaimedAt ? (
+              <div className="claimed-stamp">CLAIMED <span>{stamp(person.giftClaimedAt)}</span></div>
+            ) : person.checkedInAt ? (
+              <>
+                <p className="hint" style={{ margin: "6px 0 14px" }}>Only slide in front of the gift counter staff. One gift per pass - this cannot be undone.</p>
+                <SlideToClaim label="Slide to claim gift" onComplete={claim} />
+              </>
+            ) : (
+              <p className="hint" style={{ marginTop: 6 }}>Unlocks after you check in at the lobby desk.</p>
+            )}
           </div>
-          <button className="btn" style={{ marginTop: 24 }} onClick={() => go("checkin")}>Try the check-in scan <span className="btn-arrow">&rarr;</span></button>
+
+          <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn btn-ink btn-sm" onClick={() => downloadPass(person)}>Save pass image</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => go("scores")}>Live scores</button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ================= check-in ================= */
+/* ================= staff: check-in & gift counter ================= */
 
-function ScanResult({ person }) {
-  const h = houseOf(person.house);
-  const mine = person.challenges.map(challengeOf);
+function PinGate({ children, title }) {
+  const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_staff") === "1"; } catch (e) { return false; } });
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  if (ok) return children;
+  const enter = (e) => {
+    e.preventDefault();
+    if (pin === STAFF_PIN || pin === ADMIN_PASSWORD) {
+      try { sessionStorage.setItem("grab_staff", "1"); } catch (x) { /* ignore */ }
+      setOk(true);
+    } else setErr("Wrong PIN.");
+  };
   return (
-    <div className="trip" style={{ marginTop: 24 }}>
+    <div className="shell section" style={{ maxWidth: 440 }}>
+      <h1 style={{ fontSize: 40, marginBottom: 10 }}>{title}</h1>
+      <p className="lede" style={{ marginBottom: 24 }}>Staff only. Enter the event PIN.</p>
+      <form className="panel" onSubmit={enter}>
+        <input className="input" type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setErr(""); }} placeholder="PIN" autoFocus />
+        {err && <p className="err" style={{ marginTop: 10 }}>{err}</p>}
+        <button className="btn" style={{ width: "100%", marginTop: 14 }}>Unlock</button>
+        {db.MODE === "demo" && <p className="hint" style={{ marginTop: 12 }}>Demo PIN: {STAFF_PIN}</p>}
+      </form>
+    </div>
+  );
+}
+
+function StaffHome({ go, people }) {
+  const checked = people.filter((p) => p.checkedInAt).length;
+  const gifts = people.filter((p) => p.giftClaimedAt).length;
+  return (
+    <div className="shell section" style={{ maxWidth: 760 }}>
+      <h1 style={{ fontSize: 46, marginBottom: 10 }}>Staff stations</h1>
+      <p className="lede" style={{ marginBottom: 28 }}>Open one station per device. Everything syncs live.</p>
+      <div className="station-grid">
+        <button className="station" onClick={() => go("checkin")}>
+          <span className="station-n num">{checked}<small>/{people.length}</small></span>
+          <span className="station-t">Lobby check-in</span>
+          <span className="hint">Scan QR to mark arrival</span>
+        </button>
+        <button className="station station-gift" onClick={() => go("gift")}>
+          <span className="station-n num">{gifts}<small>/{checked}</small></span>
+          <span className="station-t">Gift counter</span>
+          <span className="hint">Scan QR, slide to redeem once</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PersonCard({ person, tone, headline, children }) {
+  const h = houseOf(person.house);
+  return (
+    <div className={"trip result result-" + tone} style={{ marginTop: 20 }}>
       <div className="trip-band" style={{ background: h.hex }}>
         <div>
-          <div style={{ fontSize: 13, opacity: 0.9 }}>Checked in - House {h.name}</div>
+          <div style={{ fontSize: 13, opacity: 0.92 }}>House {h.name} - {person.department}</div>
           <div className="wide" style={{ fontSize: 29, fontWeight: 700 }}>{person.name}</div>
         </div>
-        <div className="num" style={{ fontSize: 16 }}>{person.token}</div>
+        <div className="num" style={{ fontSize: 15 }}>{person.token}</div>
       </div>
       <div className="trip-body">
-        {mine.length === 0 ? (
-          <>
-            <h3 style={{ fontSize: 23, marginBottom: 9 }}>{person.category === "committee" ? "Committee - Green" : "Spectating today"}</h3>
-            <p style={{ color: "var(--ink-2)" }}>No challenge assignment. Viewing decks are on Level 2 above Hall A and along the north edge of the field.</p>
-          </>
-        ) : (
-          <>
-            <h3 style={{ fontSize: 21, marginBottom: 5 }}>Wave {person.wave} - {mine.length} challenge{mine.length > 1 ? "s" : ""}</h3>
-            <div className="route" style={{ marginTop: 16, "--route-fill": "18%" }}>
-              {mine.map((c, i) => (
-                <div key={c.key} className={"stop" + (i === 0 ? " stop-live" : "")}>
-                  <div className="stop-time">{c.time}</div>
-                  <div className="stop-name">{c.name}</div>
-                  <div className="stop-note">{c.venue} - report 15 minutes early - scored in {c.metric}</div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-        <div className="kv" style={{ marginTop: 18, borderTop: "1px solid var(--line)" }}>
-          <span>Staff number</span><span>{person.staffNo}</span>
-        </div>
+        <div className={"result-head result-head-" + tone}>{headline}</div>
+        {children}
       </div>
     </div>
   );
 }
 
-function CheckIn({ people, markCheckedIn }) {
-  const [code, setCode] = useState("");
-  const [err, setErr] = useState("");
-  const [found, setFound] = useState(null);
+function CheckInStation({ go }) {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const onCode = async (raw) => {
+    setBusy(true);
+    try {
+      const r = await db.checkIn(raw);
+      setRes(r.person ? r : { missing: db.normToken(raw) });
+    } catch (e) { setRes({ error: true }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="shell section" style={{ maxWidth: 640 }}>
+      <button className="linkish" onClick={() => go("staff")}>&larr; Stations</button>
+      <h1 style={{ fontSize: 42, margin: "8px 0 20px" }}>Lobby check-in</h1>
+      <Scanner onCode={onCode} busy={busy} />
+      {res && res.person && (
+        <PersonCard key={res.person.token + res.already} person={res.person} tone={res.already ? "warn" : "ok"}
+          headline={res.already ? "Already checked in at " + clock(res.person.checkedInAt) : "Welcome! Checked in"}>
+          <StatusRow person={res.person} />
+          <p className="hint" style={{ marginTop: 10 }}>Next stop: the gift counter.</p>
+        </PersonCard>
+      )}
+      {res && res.missing !== undefined && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {res.missing || "that code"}. Send the guest to the help desk.</div>}
+      {res && res.error && <div className="banner banner-bad" style={{ marginTop: 20 }}>Connection problem - try again.</div>}
+    </div>
+  );
+}
 
-  const lookup = useCallback((raw) => {
-    const q = String(raw).trim().toUpperCase();
-    if (!q) { setErr("Scan a pass or type the code."); return; }
-    const p = people.find((x) => x.token.toUpperCase() === q);
-    if (!p) { setFound(null); setErr("No pass matches " + q + ". Send them to the help desk."); return; }
-    setErr("");
-    markCheckedIn(p.id);
-    setFound({ ...p, checkedIn: true });
-  }, [people, markCheckedIn]);
+function GiftStation({ go, people, toast }) {
+  const [token, setToken] = useState("");
+  const [missing, setMissing] = useState("");
+  const [busy, setBusy] = useState(false);
+  const person = token ? people.find((p) => p.token === token) : null;
+
+  const onCode = async (raw) => {
+    const t = db.normToken(raw);
+    setBusy(true);
+    try {
+      const p = await db.findByToken(t);
+      if (p) { setToken(p.token); setMissing(""); }
+      else { setToken(""); setMissing(t); }
+    } catch (e) { setMissing(t); }
+    finally { setBusy(false); }
+  };
+  const claim = async () => {
+    const r = await db.claimGift(token);
+    if (r.ok) toast("Gift redeemed for " + r.person.name, "ok");
+    else if (r.already) toast("Already claimed!", "bad");
+  };
+  const checkInNow = async () => { await db.checkIn(token); };
 
   return (
-    <div className="shell section" style={{ maxWidth: 680 }}>
-      <h1 style={{ fontSize: 46, marginBottom: 10 }}>Check-in</h1>
-      <p className="lede" style={{ marginBottom: 28 }}>Point the scanner at the pass. Camera hook comes later - for now, type or tap a code.</p>
-      <div className="panel">
-        <label className="field" style={{ marginBottom: 14 }}>
-          <span className="field-label">Pass code</span>
-          <input className="input" value={code}
-            onChange={(e) => { setCode(e.target.value); if (err) setErr(""); }}
-            onKeyDown={(e) => e.key === "Enter" && lookup(code)}
-            placeholder="GHC-4RD1" />
-        </label>
-        {err && <p className="err">{err}</p>}
-        <button className="btn" style={{ marginTop: 12 }} onClick={() => lookup(code)}>Look up pass</button>
-        <p className="hint" style={{ marginTop: 20, marginBottom: 10 }}>Demo passes</p>
-        <div className="picker">
-          {people.slice(0, 6).map((p) => (
-            <button key={p.id} className="chip" onClick={() => { setCode(p.token); lookup(p.token); }}>
-              <span className="chip-dot" style={{ background: houseOf(p.house).hex }} />{p.token}
-            </button>
-          ))}
-        </div>
-      </div>
-      {found && <ScanResult key={found.id + found.token} person={found} />}
+    <div className="shell section" style={{ maxWidth: 640 }}>
+      <button className="linkish" onClick={() => go("staff")}>&larr; Stations</button>
+      <h1 style={{ fontSize: 42, margin: "8px 0 20px" }}>Gift counter</h1>
+      <Scanner onCode={onCode} busy={busy} />
+      {missing && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {missing}.</div>}
+      {person && (person.giftClaimedAt ? (
+        <PersonCard key={person.token + "c"} person={person} tone="bad" headline="ALREADY CLAIMED">
+          <div className="claimed-stamp claimed-big">CLAIMED <span>{stamp(person.giftClaimedAt)}</span></div>
+          <p className="hint" style={{ marginTop: 10 }}>Do not hand over another gift.</p>
+        </PersonCard>
+      ) : !person.checkedInAt ? (
+        <PersonCard key={person.token + "n"} person={person} tone="warn" headline="Not checked in yet">
+          <p className="hint" style={{ marginBottom: 14 }}>The guest skipped the lobby desk. Check them in here, then redeem.</p>
+          <button className="btn btn-ink" onClick={checkInNow}>Check in now</button>
+        </PersonCard>
+      ) : (
+        <PersonCard key={person.token + "r"} person={person} tone="ok" headline="Ready to redeem">
+          <SlideToClaim label="Slide to redeem gift" onComplete={claim} />
+          <p className="hint" style={{ marginTop: 10 }}>Hand over the gift once this card turns to CLAIMED.</p>
+        </PersonCard>
+      ))}
     </div>
   );
 }
@@ -757,7 +845,7 @@ function ChallengeBoard({ challenge, totals }) {
               <span className="big-lane-name">{r.h.name}</span>
               {mv ? (
                 <span className={"mover " + (mv > 0 ? "mover-up" : "mover-down")}>
-                  {mv > 0 ? "\u25B2" : "\u25BC"}{Math.abs(mv)}
+                  {mv > 0 ? "▲" : "▼"}{Math.abs(mv)}
                 </span>
               ) : null}
               <span className="big-gap-pill">{gapText(r.v)}</span>
@@ -818,25 +906,9 @@ function OverallBoard({ standings }) {
 
 const BOARD_KEYS = ["overall"].concat(CHALLENGES.map((c) => c.key));
 
-function Scores({ totals, standings, go }) {
-  const [board, setBoard] = useState(() => {
-    const h = (window.location.hash || "").replace("#board=", "");
-    return BOARD_KEYS.indexOf(h) >= 0 ? h : "overall";
-  });
-
-  useEffect(() => {
-    window.location.hash = "board=" + board;
-  }, [board]);
-
-  useEffect(() => {
-    const onHash = () => {
-      const h = (window.location.hash || "").replace("#board=", "");
-      if (BOARD_KEYS.indexOf(h) >= 0) setBoard(h);
-    };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
+function Scores({ totals, standings, go, arg }) {
+  const board = BOARD_KEYS.indexOf(arg) >= 0 ? arg : "overall";
+  const setBoard = (b) => go("scores", b);
   const isOverall = board === "overall";
   const challenge = isOverall ? null : challengeOf(board);
 
@@ -844,7 +916,6 @@ function Scores({ totals, standings, go }) {
     HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
       .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))[0];
   const cupLeader = HOUSES.map((h) => ({ h, v: standings[h.key].total })).sort((a, b) => b.v - a.v)[0];
-
   const activeLeader = isOverall ? cupLeader : leaderOf(challenge);
 
   return (
@@ -879,13 +950,12 @@ function Scores({ totals, standings, go }) {
             <div className="board-where">
               <span className="live-dot" />
               {isOverall
-                ? "Rank points - 5 for winning a challenge, down to 1"
+                ? "Rank points - " + RANK_POINTS[0] + " for winning a challenge, down to 1"
                 : challenge.venue + " - " + challenge.time + " - " + challenge.metricNote}
             </div>
           </div>
           <div className="board-brand">
-            <span className="wordmark">Grab</span>
-            <span className="brand-sub">HOUSE CHALLENGE {EVENT.year}</span>
+            <Badge height={44} />
           </div>
         </div>
 
@@ -921,18 +991,173 @@ function Scores({ totals, standings, go }) {
 
 /* ================= admin ================= */
 
-function ScoreEntry({ totals, addScore }) {
+function AdminLogin({ onOk }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const submit = (e) => {
+    e.preventDefault();
+    if (pw === ADMIN_PASSWORD) {
+      try { sessionStorage.setItem("grab_admin", "1"); sessionStorage.setItem("grab_staff", "1"); } catch (x) { /* ignore */ }
+      onOk();
+    } else setErr("Wrong password.");
+  };
+  return (
+    <div className="shell section" style={{ maxWidth: 440 }}>
+      <h1 style={{ fontSize: 46, marginBottom: 10 }}>Admin</h1>
+      <p className="lede" style={{ marginBottom: 24 }}>Guest list, check-in and gift status, scoring.</p>
+      <form className="panel" onSubmit={submit}>
+        <input className="input" type="password" value={pw} onChange={(e) => { setPw(e.target.value); setErr(""); }} placeholder="Admin password" autoFocus />
+        {err && <p className="err" style={{ marginTop: 10 }}>{err}</p>}
+        <button className="btn" style={{ width: "100%", marginTop: 14 }}>Sign in</button>
+        {db.MODE === "demo" && <p className="hint" style={{ marginTop: 12 }}>Demo password: {ADMIN_PASSWORD}</p>}
+      </form>
+    </div>
+  );
+}
+
+function Overview({ people }) {
+  const total = people.length;
+  const checked = people.filter((p) => p.checkedInAt).length;
+  const gifts = people.filter((p) => p.giftClaimedAt).length;
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const byDept = DEPARTMENTS.map((d) => ({ d, n: people.filter((p) => p.department === d).length })).filter((x) => x.n).sort((a, b) => b.n - a.n);
+  const maxDept = Math.max(1, ...byDept.map((x) => x.n));
+  return (
+    <>
+      <div className="kpis">
+        <div className="kpi"><div className="num kpi-v"><Counter value={total} /></div><div className="kpi-l">RSVP'd</div></div>
+        <div className="kpi"><div className="num kpi-v"><Counter value={checked} /></div><div className="kpi-l">Checked in <b>{pct(checked, total)}%</b></div></div>
+        <div className="kpi"><div className="num kpi-v"><Counter value={gifts} /></div><div className="kpi-l">Gifts claimed <b>{pct(gifts, checked)}%</b></div></div>
+        <div className="kpi"><div className="num kpi-v"><Counter value={total - checked} /></div><div className="kpi-l">Yet to arrive</div></div>
+      </div>
+      <div className="split" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 20, marginTop: 20 }}>
+        <div className="panel">
+          <h3 style={{ fontSize: 22, marginBottom: 16 }}>By house</h3>
+          {HOUSES.map((h) => {
+            const mine = people.filter((p) => p.house === h.key);
+            const inn = mine.filter((p) => p.checkedInAt).length;
+            return (
+              <div key={h.key} className="bar-row">
+                <span className="bar-label"><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span>
+                <span className="bar"><span style={{ width: pct(mine.length, Math.max(1, total)) + "%", background: h.hex }} /></span>
+                <span className="num bar-n">{inn}/{mine.length}</span>
+              </div>
+            );
+          })}
+          <p className="hint" style={{ marginTop: 8 }}>Checked in / RSVP'd</p>
+        </div>
+        <div className="panel">
+          <h3 style={{ fontSize: 22, marginBottom: 16 }}>By department</h3>
+          {byDept.length === 0 && <p className="hint">No RSVPs yet.</p>}
+          {byDept.map((x) => (
+            <div key={x.d} className="bar-row">
+              <span className="bar-label">{x.d}</span>
+              <span className="bar"><span style={{ width: (x.n / maxDept) * 100 + "%", background: "var(--grab)" }} /></span>
+              <span className="num bar-n">{x.n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function exportCsv(rows) {
+  const head = ["Name", "Department", "Email", "Phone", "House", "Pass code", "RSVP at", "Checked in at", "Gift claimed at"];
+  const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const lines = [head.map(q).join(",")].concat(rows.map((p) =>
+    [p.name, p.department, p.email, p.phone, houseOf(p.house).name, p.token, stamp(p.createdAt), stamp(p.checkedInAt), stamp(p.giftClaimedAt)].map(q).join(",")));
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "grab-rsvp-" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+}
+
+function Roster({ people, go, toast }) {
+  const [q, setQ] = useState("");
+  const [house, setHouse] = useState("");
+  const [dept, setDept] = useState("");
+  const [status, setStatus] = useState("");
+  const rows = people.filter((p) => {
+    const s = q.trim().toLowerCase();
+    if (s && ![p.name, p.email, p.token, p.phone].some((v) => String(v).toLowerCase().includes(s))) return false;
+    if (house && p.house !== house) return false;
+    if (dept && p.department !== dept) return false;
+    if (status === "in" && !p.checkedInAt) return false;
+    if (status === "out" && p.checkedInAt) return false;
+    if (status === "gift" && !p.giftClaimedAt) return false;
+    if (status === "nogift" && (!p.checkedInAt || p.giftClaimedAt)) return false;
+    return true;
+  }).slice().reverse();
+
+  const act = async (fn, msg) => { try { await fn(); toast(msg, "ok"); } catch (e) { toast("Failed - try again", "bad"); } };
+
+  return (
+    <div className="panel" style={{ padding: 0 }}>
+      <div className="roster-tools">
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, phone or pass code" />
+        <select className="input" value={house} onChange={(e) => setHouse(e.target.value)}>
+          <option value="">All houses</option>
+          {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name}</option>)}
+        </select>
+        <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
+          <option value="">All departments</option>
+          {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">Any status</option>
+          <option value="in">Checked in</option>
+          <option value="out">Not arrived</option>
+          <option value="gift">Gift claimed</option>
+          <option value="nogift">In, gift pending</option>
+        </select>
+        <button className="btn btn-ink btn-sm" onClick={() => exportCsv(rows)}>Export CSV ({rows.length})</button>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="grid">
+          <thead><tr><th>Name</th><th>Department</th><th>Contact</th><th>House</th><th>Pass</th><th>Check-in</th><th>Gift</th><th /></tr></thead>
+          <tbody>
+            {rows.map((p) => {
+              const h = houseOf(p.house);
+              return (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 700 }}>{p.name}</td>
+                  <td>{p.department}</td>
+                  <td style={{ fontSize: 14 }}>{p.email}<br /><span style={{ color: "var(--ink-3)" }}>{p.phone}</span></td>
+                  <td><span className="tag" style={{ background: h.hex + "22", color: h.hex }}><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span></td>
+                  <td className="num" style={{ fontSize: 14 }}><button className="linkish" onClick={() => go("pass", p.token)}>{p.token}</button></td>
+                  <td>{p.checkedInAt ? <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>{clock(p.checkedInAt)}</span> : <span className="tag">Not yet</span>}</td>
+                  <td>{p.giftClaimedAt ? <span className="tag tag-gift">{clock(p.giftClaimedAt)}</span> : <span className="tag">-</span>}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {p.checkedInAt
+                      ? <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.updatePerson(p.id, { checkedInAt: null, giftClaimedAt: null }), "Check-in reset")}>Undo in</button>
+                      : <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.checkIn(p.token), "Checked in")}>Check in</button>}
+                    {p.giftClaimedAt && <button className="btn btn-ghost btn-xs" onClick={() => window.confirm("Reset the gift claim for " + p.name + "?") && act(() => db.updatePerson(p.id, { giftClaimedAt: null }), "Gift reset")}>Reset gift</button>}
+                    <button className="btn btn-ghost btn-xs btn-danger" onClick={() => window.confirm("Delete " + p.name + "'s RSVP?") && act(() => db.deletePerson(p.id), "Deleted")}>Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", padding: 28 }}>Nobody matches those filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ScoreEntry({ totals, toast }) {
   const [challenge, setChallenge] = useState("fitness");
   const [house, setHouse] = useState("red");
   const [points, setPoints] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
-  const [flash, setFlash] = useState("");
 
   const c = challengeOf(challenge);
   const isTime = c.type === "time";
 
-  const submit = () => {
+  const submit = async () => {
     let n;
     if (isTime) {
       n = parseTime(points);
@@ -942,14 +1167,13 @@ function ScoreEntry({ totals, addScore }) {
       if (!points.trim() || Number.isNaN(n)) return setErr("Enter a number.");
     }
     setErr("");
-    addScore({ challenge, house, points: n, note: note.trim(), by: "Marshal" });
-    setFlash(
-      isTime
+    try {
+      await db.addScore({ challenge, house, points: n, note: note.trim(), by: "Marshal" });
+      toast(isTime
         ? houseOf(house).name + " logged " + fmtTime(n) + " on " + c.name
-        : (n > 0 ? "+" : "") + n + " to " + houseOf(house).name + " on " + c.name
-    );
-    setPoints(""); setNote("");
-    setTimeout(() => setFlash(""), 2600);
+        : (n > 0 ? "+" : "") + n + " to " + houseOf(house).name + " on " + c.name, "ok");
+      setPoints(""); setNote("");
+    } catch (e) { setErr("Could not save. Try again."); }
   };
 
   const rows = HOUSES.map((h) => ({ h, v: totals[challenge][h.key] }))
@@ -990,7 +1214,6 @@ function ScoreEntry({ totals, addScore }) {
         </label>
         {err && <p className="err">{err}</p>}
         <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={submit}>Post to scoreboard</button>
-        {flash && <p className="flash">{flash}</p>}
       </div>
       <div className="panel">
         <h3 style={{ fontSize: 24, marginBottom: 5 }}>{c.name}</h3>
@@ -1008,46 +1231,7 @@ function ScoreEntry({ totals, addScore }) {
   );
 }
 
-function Roster({ people }) {
-  const [q, setQ] = useState("");
-  const rows = people.filter((p) =>
-    !q.trim() ||
-    p.name.toLowerCase().includes(q.toLowerCase()) ||
-    p.token.toLowerCase().includes(q.toLowerCase()) ||
-    p.staffNo.toLowerCase().includes(q.toLowerCase())
-  );
-  return (
-    <div className="panel" style={{ padding: 0 }}>
-      <div style={{ padding: 20, borderBottom: "1px solid var(--line)" }}>
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, staff number or pass code" />
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table className="grid">
-          <thead><tr><th>Name</th><th>Staff no.</th><th>House</th><th>Role</th><th>Challenges</th><th>Pass</th><th>Check-in</th></tr></thead>
-          <tbody>
-            {rows.map((p) => {
-              const h = houseOf(p.house);
-              return (
-                <tr key={p.id}>
-                  <td style={{ fontWeight: 700 }}>{p.name}</td>
-                  <td>{p.staffNo}</td>
-                  <td><span className="tag" style={{ background: h.hex + "22", color: h.hex }}><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span></td>
-                  <td style={{ textTransform: "capitalize" }}>{p.category}</td>
-                  <td>{p.challenges.length ? p.challenges.map((k) => challengeOf(k).name).join(", ") : "-"}</td>
-                  <td className="num" style={{ fontSize: 14 }}>{p.token}</td>
-                  <td>{p.checkedIn ? <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>In</span> : <span className="tag">Not yet</span>}</td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && <tr><td colSpan={7} style={{ color: "var(--ink-3)", padding: 28 }}>Nobody matches that. Try the staff number.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function Ledger({ scores, removeScore }) {
+function Ledger({ scores, toast }) {
   return (
     <div className="panel" style={{ padding: 0 }}>
       <div className="ledger" style={{ overflowX: "auto" }}>
@@ -1063,7 +1247,7 @@ function Ledger({ scores, removeScore }) {
                   <td className="num" style={{ fontSize: 16 }}>{showValue(challengeOf(s.challenge), s.points)}</td>
                   <td style={{ color: "var(--ink-3)" }}>{s.note || "-"}</td>
                   <td style={{ color: "var(--ink-3)" }}>{s.by}</td>
-                  <td style={{ textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => removeScore(s.id)}>Undo</button></td>
+                  <td style={{ textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => db.removeScore(s.id).then(() => toast("Score removed", "ok"))}>Undo</button></td>
                 </tr>
               );
             })}
@@ -1074,19 +1258,28 @@ function Ledger({ scores, removeScore }) {
   );
 }
 
-function Admin({ people, scores, totals, addScore, removeScore }) {
-  const [tab, setTab] = useState("score");
+function Admin({ people, scores, totals, go, toast }) {
+  const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_admin") === "1"; } catch (e) { return false; } });
+  const [tab, setTab] = useState("overview");
+  if (!ok) return <AdminLogin onOk={() => setOk(true)} />;
+  const logout = () => { try { sessionStorage.removeItem("grab_admin"); sessionStorage.removeItem("grab_staff"); } catch (e) { /* ignore */ } setOk(false); };
   return (
     <div className="shell section">
-      <h1 style={{ fontSize: 46, marginBottom: 24 }}>Admin</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
+        <h1 style={{ fontSize: 46, marginRight: "auto" }}>Admin</h1>
+        {db.MODE === "demo" && <button className="btn btn-ghost btn-sm" onClick={() => window.confirm("Reset all demo data?") && db.resetDemo()}>Reset demo data</button>}
+        <button className="btn btn-ghost btn-sm" onClick={() => go("staff")}>Staff stations</button>
+        <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
+      </div>
       <div className="tabs" role="tablist">
-        {[["score", "Scoring"], ["roster", "Roster"], ["ledger", "Score ledger"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["roster", "Guests (" + people.length + ")"], ["score", "Scoring"], ["ledger", "Score ledger"]].map(([k, label]) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
-      {tab === "score" && <ScoreEntry totals={totals} addScore={addScore} />}
-      {tab === "roster" && <Roster people={people} />}
-      {tab === "ledger" && <Ledger scores={scores} removeScore={removeScore} />}
+      {tab === "overview" && <Overview people={people} />}
+      {tab === "roster" && <Roster people={people} go={go} toast={toast} />}
+      {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
+      {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
     </div>
   );
 }
@@ -1094,14 +1287,32 @@ function Admin({ people, scores, totals, addScore, removeScore }) {
 /* ================= root ================= */
 
 export default function App() {
-  const [page, setPage] = useState("home");
-  const [people, setPeople] = useState(SEED_PEOPLE);
-  const [scores, setScores] = useState(SEED_SCORES);
+  const [route, go] = useRoute();
+  const [people, setPeople] = useState([]);
+  const [scores, setScores] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+  const [toastMsg, setToastMsg] = useState(null);
 
-  const go = useCallback((p) => {
-    setPage(p);
-    window.scrollTo({ top: 0, behavior: calmMotion() ? "auto" : "smooth" });
+  const refresh = useCallback(() => {
+    db.loadAll()
+      .then((d) => { setPeople(d.people); setScores(d.scores); setLoaded(true); setLoadErr(""); })
+      .catch(() => setLoadErr("Can't reach the database. Retrying..."));
   }, []);
+
+  useEffect(() => {
+    refresh();
+    return db.subscribe(refresh);
+  }, [refresh]);
+
+  const toast = useCallback((text, tone) => {
+    setToastMsg({ text, tone, id: Date.now() });
+  }, []);
+  useEffect(() => {
+    if (!toastMsg) return;
+    const t = setTimeout(() => setToastMsg(null), 2800);
+    return () => clearTimeout(t);
+  }, [toastMsg]);
 
   const totals = useMemo(() => {
     const t = {};
@@ -1133,26 +1344,32 @@ export default function App() {
     return pts;
   }, [totals]);
 
-  const addPerson = useCallback((p) => setPeople((xs) => [...xs, p]), []);
-  const markCheckedIn = useCallback((id) => setPeople((xs) => xs.map((p) => (p.id === id ? { ...p, checkedIn: true } : p))), []);
-  const addScore = useCallback((s) => setScores((xs) => [...xs, { ...s, id: Date.now() }]), []);
-  const removeScore = useCallback((id) => setScores((xs) => xs.filter((s) => s.id !== id)), []);
+  const { page, arg } = route;
+  const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;
 
-  if (page === "scores") return <Scores totals={totals} standings={standings} go={go} />;
+  if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} />{toastEl}</>;
+
+  let body;
+  if (!loaded && page !== "home" && page !== "rsvp") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
+  else if (page === "rsvp") body = <Rsvp go={go} />;
+  else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
+  else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
+  else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} /></PinGate>;
+  else if (page === "gift") body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
+  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} go={go} toast={toast} />;
+  else body = <Home key="home" go={go} people={people} />;
 
   return (
     <>
       <Nav page={page} go={go} />
-      <Ticker totals={totals} go={go} />
-      {page === "home" && <Home key="home" go={go} people={people} totals={totals} />}
-      {page === "register" && <Register addPerson={addPerson} go={go} />}
-      {page === "invite" && <Invite go={go} />}
-      {page === "checkin" && <CheckIn people={people} markCheckedIn={markCheckedIn} />}
-      {page === "admin" && <Admin people={people} scores={scores} totals={totals} addScore={addScore} removeScore={removeScore} />}
+      {page !== "home" && <Ticker totals={totals} go={go} />}
+      {loadErr && loaded && <div className="banner banner-bad" style={{ borderRadius: 0, margin: 0 }}>{loadErr}</div>}
+      {body}
+      {toastEl}
       <footer className="foot">
         <div className="shell" style={{ display: "flex", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
           <span>{EVENT.name} {EVENT.year} - {EVENT.venue}</span>
-          <span>Internal event site. Not a Grab consumer product.</span>
+          <span>{db.MODE === "demo" ? "Demo mode - data is stored on this device only." : "Internal event site."}</span>
         </div>
       </footer>
     </>
