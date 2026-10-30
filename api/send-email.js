@@ -23,15 +23,14 @@ export default async function handler(req, res) {
   const paras = String(message || DEFAULT_MESSAGE).trim().split(/\n\s*\n/)
     .map((p) => `<p style="font:15px Arial;color:#2b4235;line-height:1.6;margin:0 0 14px">${esc(p).replace(/\n/g, "<br/>")}</p>`).join("");
   const logo = /^https:\/\//.test(logoUrl || "")
-    ? `<img src="${esc(logoUrl)}" height="64" alt="${esc(event.name || "Grab")}" style="display:block;height:64px;margin-bottom:14px"/>` : "";
+    ? `<img src="${esc(logoUrl)}" height="120" alt="${esc(event.name || "Grab")}" style="display:block;height:120px;width:auto;margin:0 auto 16px"/>` : "";
 
   const html = `<!doctype html><html><body style="margin:0;background:#f1f6f1">
 <table width="100%" cellpadding="0" cellspacing="0" style="padding:26px 12px"><tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:18px;overflow:hidden">
-<tr><td style="background:#00B14F;padding:26px 32px 22px;color:#fff">
+<tr><td align="center" style="background:#00B14F;padding:30px 32px 26px;color:#fff;text-align:center">
   ${logo}
-  <div style="font:600 13px Arial;letter-spacing:2px;opacity:.92">${esc((event.name || "").toUpperCase())} ${esc(event.year || "")}</div>
-  <div style="font:800 30px Arial;margin-top:6px">${esc(event.dateLong || "")}</div>
+  <div style="font:800 30px Arial;letter-spacing:1px;line-height:1.2">${esc((event.name || "").toUpperCase())} ${esc(event.year || "")}</div>
 </td></tr>
 <tr><td style="background:${color};height:10px;line-height:10px;font-size:0">&nbsp;</td></tr>
 <tr><td style="padding:26px 32px 0">

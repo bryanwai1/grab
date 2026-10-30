@@ -1469,9 +1469,8 @@ function EmailPreview({ person, subject, message }) {
       <div className="mail-subject"><span>Subject</span>{fillTemplate(subject, person)}</div>
       <div className="mail-card">
         <div className="mail-head">
-          <img src={BADGE} alt="" height={46} />
-          <div className="mail-eyebrow">{EVENT.name.toUpperCase()} {EVENT.year}</div>
-          <div className="mail-date">{EVENT.dateLong}</div>
+          <img src={BADGE} alt="" height={96} />
+          <div className="mail-title">{EVENT.name.toUpperCase()} {EVENT.year}</div>
         </div>
         <div style={{ height: 8, background: h.hex }} />
         <div className="mail-body">

@@ -838,8 +838,9 @@ textarea.input { resize: vertical; min-height: 150px; line-height: 1.5; }
 .mail-subject { background: #fff; border-radius: 10px; padding: 10px 14px; font-weight: 700; font-size: 15px; margin-bottom: 12px; }
 .mail-subject span { display: block; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .mail-card { background: #fff; border-radius: 16px; overflow: hidden; }
-.mail-head { background: var(--grab); color: #fff; padding: 20px 22px; }
-.mail-head img { display: block; height: 46px; margin-bottom: 10px; }
+.mail-head { background: var(--grab); color: #fff; padding: 24px 22px 22px; text-align: center; }
+.mail-head img { display: block; height: 96px; width: auto; margin: 0 auto 14px; }
+.mail-title { font-size: 22px; font-weight: 800; letter-spacing: .5px; line-height: 1.2; }
 .mail-eyebrow { font-size: 12px; letter-spacing: 2px; font-weight: 600; opacity: .92; }
 .mail-date { font-size: 22px; font-weight: 800; margin-top: 4px; }
 .mail-body { padding: 20px 22px; font-size: 15px; color: #2b4235; line-height: 1.6; }
