@@ -10,8 +10,12 @@ create table if not exists grab_people (
   house text not null check (house in ('blue','red','green','yellow')),
   created_at timestamptz not null default now(),
   checked_in_at timestamptz,
-  gift_claimed_at timestamptz
+  gift_claimed_at timestamptz,
+  email_sent_at timestamptz
 );
+
+-- Already created the table earlier? Run this once to add email tracking:
+alter table grab_people add column if not exists email_sent_at timestamptz;
 
 create table if not exists grab_scores (
   id bigserial primary key,

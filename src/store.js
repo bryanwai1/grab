@@ -33,6 +33,7 @@ const toPerson = (r) => ({
   id: r.id, token: r.token, name: r.name, department: r.department, email: r.email,
   phone: r.phone, house: r.house, createdAt: r.created_at,
   checkedInAt: r.checked_in_at, giftClaimedAt: r.gift_claimed_at,
+  emailSentAt: r.email_sent_at || null,
 });
 const toScore = (r) => ({
   id: r.id, challenge: r.challenge, house: r.house, points: Number(r.points),
@@ -208,7 +209,7 @@ export async function updatePerson(id, patch) {
     writeDb(db);
     return;
   }
-  const map = { checkedInAt: "checked_in_at", giftClaimedAt: "gift_claimed_at" };
+  const map = { checkedInAt: "checked_in_at", giftClaimedAt: "gift_claimed_at", emailSentAt: "email_sent_at" };
   const body = {};
   Object.keys(patch).forEach((k) => (body[map[k] || k] = patch[k]));
   const { error } = await supa.from("grab_people").update(body).eq("id", id);

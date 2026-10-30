@@ -32,6 +32,32 @@ const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-di
 const stamp = (iso) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
 
+// Template placeholders the admin can use in the email subject and message.
+const EMAIL_FIELDS = ["name", "house", "department", "code", "date", "venue", "doors", "link"];
+function fillTemplate(tpl, p) {
+  const v = { name: p.name, house: houseOf(p.house).name, department: p.department, code: p.token,
+    date: EVENT.dateLong, venue: EVENT.venue, doors: EVENT.doorsOpen, link: passUrl(p.token) };
+  return String(tpl || "").replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m));
+}
+// Sends one Grab-themed email with the person's QR pass. Returns { ok, error }.
+async function sendPassEmail(p, { subject, message, to } = {}) {
+  const h = houseOf(p.house);
+  try {
+    const r = await fetch("/api/send-email", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, department: p.department,
+        passUrl: passUrl(p.token), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
+        subject: subject ? fillTemplate(subject, p) : undefined,
+        message: message ? fillTemplate(message, p) : undefined,
+        event: EVENT,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    return d.ok ? { ok: true } : { ok: false, error: d.error || "Send failed (" + r.status + ")" };
+  } catch (e) { return { ok: false, error: "Network error" }; }
+}
+
 /* ================= routing (hash based, so pass links survive a refresh) ================= */
 
 function readRoute() {
@@ -220,7 +246,7 @@ function QrImg({ token, size = 220, className, style }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
     let live = true;
-    QRCode.toDataURL(passUrl(token), { width: size * 2, margin: 1, color: { dark: "#06180e", light: "#ffffff" } })
+    QRCode.toDataURL(token, { width: size * 2, margin: 2, errorCorrectionLevel: "M", color: { dark: "#06180e", light: "#ffffff" } })
       .then((u) => live && setSrc(u))
       .catch(() => {});
     return () => { live = false; };
@@ -232,7 +258,7 @@ function QrImg({ token, size = 220, className, style }) {
 
 async function downloadPass(person) {
   const h = houseOf(person.house);
-  const qr = await QRCode.toDataURL(passUrl(person.token), { width: 640, margin: 1 });
+  const qr = await QRCode.toDataURL(person.token, { width: 640, margin: 2, errorCorrectionLevel: "M" });
   const img = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = qr; });
   const W = 900, H = 1300;
   const cv = document.createElement("canvas");
@@ -303,81 +329,192 @@ function SlideToClaim({ label = "Slide to claim", onComplete, disabled }) {
 
 /* ================= camera scanner ================= */
 
-function Scanner({ onCode, busy }) {
+// Short beep on a successful read (no audio file needed).
+let audioCtx = null;
+function beep(ok = true) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = ok ? 1320 : 330; o.type = "sine";
+    g.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.2);
+  } catch (e) { /* ignore */ }
+}
+
+const CAM_KEY = "grab_scan_cam_on";
+
+// Camera QR scanner. Uses the browser's native BarcodeDetector when present (fast on
+// Android/Chrome), otherwise jsQR on a downscaled frame plus a full-res centre crop.
+function Scanner({ onCode, busy, people }) {
   const video = useRef(null);
   const canvas = useRef(null);
   const [on, setOn] = useState(false);
   const [camErr, setCamErr] = useState("");
   const [code, setCode] = useState("");
+  const [flash, setFlash] = useState(0);
+  const [torch, setTorch] = useState(null); // null = unsupported
   const last = useRef({ v: "", t: 0 });
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const cb = useRef(onCode);
   cb.current = onCode;
 
-  const stop = useCallback(() => {
+  const stop = useCallback((remember) => {
     const v = video.current;
     if (v && v.srcObject) { v.srcObject.getTracks().forEach((t) => t.stop()); v.srcObject = null; }
-    setOn(false);
+    setOn(false); setTorch(null);
+    if (remember) { try { localStorage.removeItem(CAM_KEY); } catch (e) { /* ignore */ } }
   }, []);
 
-  const start = async () => {
+  const start = useCallback(async () => {
     setCamErr("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      video.current.srcObject = stream;
-      await video.current.play();
-      setOn(true);
-    } catch (e) {
-      setCamErr("Camera not available. Allow camera access or type the pass code below.");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCamErr("This browser can't open the camera. Use Chrome or Safari over https, or type the code below.");
+      return;
     }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      video.current.srcObject = stream;
+      video.current.setAttribute("playsinline", "true");
+      await video.current.play();
+      const track = stream.getVideoTracks()[0];
+      try {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.torch) setTorch(false);
+        if (caps.focusMode && caps.focusMode.includes("continuous")) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+      } catch (e) { /* ignore */ }
+      setOn(true);
+      try { localStorage.setItem(CAM_KEY, "1"); } catch (e) { /* ignore */ }
+    } catch (e) {
+      setCamErr(e && e.name === "NotAllowedError"
+        ? "Camera blocked. Tap the lock icon in the address bar, allow Camera, then press Start camera."
+        : "Camera not available. Type the pass code or name below.");
+    }
+  }, []);
+
+  const toggleTorch = async () => {
+    const v = video.current;
+    const track = v && v.srcObject && v.srcObject.getVideoTracks()[0];
+    if (!track) return;
+    try { await track.applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch (e) { setTorch(null); }
   };
 
-  useEffect(() => () => stop(), [stop]);
+  // Re-open the camera automatically if this device used it last time.
+  useEffect(() => {
+    let want = false;
+    try { want = localStorage.getItem(CAM_KEY) === "1"; } catch (e) { /* ignore */ }
+    if (want) start();
+    return () => stop(false);
+  }, [start, stop]);
 
   useEffect(() => {
     if (!on) return;
-    let raf;
-    const tick = () => {
-      const v = video.current, c = canvas.current;
-      if (v && c && v.readyState === v.HAVE_ENOUGH_DATA) {
-        c.width = v.videoWidth; c.height = v.videoHeight;
-        const ctx = c.getContext("2d", { willReadFrequently: true });
-        ctx.drawImage(v, 0, 0, c.width, c.height);
-        const hit = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "dontInvert" });
-        const t = Date.now();
-        if (hit && hit.data && (hit.data !== last.current.v || t - last.current.t > 4000)) {
-          last.current = { v: hit.data, t };
-          if (navigator.vibrate) navigator.vibrate(80);
-          cb.current(hit.data);
-        }
-      }
-      raf = requestAnimationFrame(tick);
+    let timer, alive = true;
+    const native = "BarcodeDetector" in window ? new window.BarcodeDetector({ formats: ["qr_code"] }) : null;
+    const hit = (data) => {
+      const t = Date.now();
+      if (!data || busyRef.current) return;
+      if (data === last.current.v && t - last.current.t < 3500) return; // same pass held in front of camera
+      last.current = { v: data, t };
+      if (navigator.vibrate) navigator.vibrate(90);
+      beep(true);
+      setFlash((n) => n + 1);
+      cb.current(data);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const readJsQr = (v, c) => {
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      // 1) whole frame, downscaled to ~720px wide: fast and catches most passes
+      const scale = Math.min(1, 720 / v.videoWidth);
+      c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      let r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "attemptBoth" });
+      if (r && r.data) return r.data;
+      // 2) full-resolution centre crop: helps with small or far-away codes
+      const side = Math.min(v.videoWidth, v.videoHeight) * 0.6;
+      const sx = (v.videoWidth - side) / 2, sy = (v.videoHeight - side) / 2;
+      c.width = c.height = Math.round(Math.min(side, 800));
+      ctx.drawImage(v, sx, sy, side, side, 0, 0, c.width, c.height);
+      r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "attemptBoth" });
+      return r && r.data;
+    };
+    const tick = async () => {
+      if (!alive) return;
+      const v = video.current, c = canvas.current;
+      if (v && c && v.readyState >= 2 && v.videoWidth) {
+        try {
+          if (native) {
+            const codes = await native.detect(v);
+            if (codes.length) hit(codes[0].rawValue);
+          } else hit(readJsQr(v, c));
+        } catch (e) { /* frame not ready */ }
+      }
+      if (alive) timer = setTimeout(tick, native ? 90 : 120);
+    };
+    tick();
+    return () => { alive = false; clearTimeout(timer); };
   }, [on]);
+
+  // Manual lookup: pass code, or part of a name / email / phone.
+  const q = code.trim().toLowerCase();
+  const matches = q.length >= 2 && people
+    ? people.filter((p) => [p.name, p.email, p.phone, p.token].some((v) => String(v || "").toLowerCase().includes(q))).slice(0, 6)
+    : [];
+  const submitManual = () => {
+    if (!code.trim()) return;
+    if (matches.length === 1) cb.current(matches[0].token);
+    else cb.current(code);
+    setCode("");
+  };
 
   return (
     <div className="panel">
       <div className="scan-view">
-        <video ref={video} playsInline muted className="scan-video" style={{ opacity: on ? 1 : 0 }} />
+        <video ref={video} playsInline muted autoPlay className="scan-video" style={{ opacity: on ? 1 : 0 }} />
         <canvas ref={canvas} style={{ display: "none" }} />
-        {on ? <span className="scan-frame" /> : (
+        {on ? (
+          <>
+            <span className="scan-frame" />
+            <span className="scan-live"><span className="live-dot" /> Scanning</span>
+            {torch !== null && <button className="scan-torch" onClick={toggleTorch} aria-pressed={torch}>{torch ? "Torch on" : "Torch"}</button>}
+            {flash > 0 && <span key={flash} className="scan-flash" />}
+          </>
+        ) : (
           <div className="scan-idle">
             <Logo white height={40} />
             <span>Point the camera at the guest's QR pass</span>
           </div>
         )}
       </div>
-      <button className={"btn" + (on ? " btn-ghost" : "")} style={{ width: "100%", marginTop: 14 }} onClick={on ? stop : start}>
+      <button className={"btn" + (on ? " btn-ghost" : "")} style={{ width: "100%", marginTop: 14 }} onClick={on ? () => stop(true) : start}>
         {on ? "Stop camera" : "Start camera"}
       </button>
       {camErr && <p className="err" style={{ marginTop: 10 }}>{camErr}</p>}
       <div className="manual">
         <input className="input" value={code} onChange={(e) => setCode(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && code.trim()) { onCode(code); setCode(""); } }}
-          placeholder="Or type code, e.g. GRB-7K2QXM" />
-        <button className="btn btn-ink" disabled={busy || !code.trim()} onClick={() => { onCode(code); setCode(""); }}>Look up</button>
+          onKeyDown={(e) => { if (e.key === "Enter") submitManual(); }}
+          placeholder="Or type pass code or name" />
+        <button className="btn btn-ink" disabled={busy || !code.trim()} onClick={submitManual}>Look up</button>
       </div>
+      {matches.length > 0 && (
+        <ul className="lookup-list">
+          {matches.map((p) => {
+            const h = houseOf(p.house);
+            return (
+              <li key={p.id}>
+                <button onClick={() => { cb.current(p.token); setCode(""); }}>
+                  <span className="chip-dot" style={{ background: h.hex }} />
+                  <span style={{ flex: 1, textAlign: "left" }}><b>{p.name}</b><small>{p.department} - {p.token}</small></span>
+                  {p.checkedInAt ? <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>In</span> : <span className="tag">Select</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -429,11 +566,7 @@ function Rsvp({ go }) {
     try {
       const { person, duplicate } = await db.register(f);
       if (!duplicate) {
-        const h = houseOf(person.house);
-        fetch("/api/send-email", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: person.email, name: person.name, token: person.token, house: h.name, houseHex: h.hex, department: person.department, passUrl: passUrl(person.token), event: EVENT }),
-        }).catch(() => {});
+        sendPassEmail(person).then((r) => { if (r.ok) db.updatePerson(person.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); });
       }
       try { localStorage.setItem("grab_my_pass", person.token); } catch (x) { /* ignore */ }
       go("pass", person.token + (duplicate ? "~dup" : "~new"));
@@ -666,7 +799,7 @@ function PersonCard({ person, tone, headline, children }) {
   );
 }
 
-function CheckInStation({ go }) {
+function CheckInStation({ go, people }) {
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
   const onCode = async (raw) => {
@@ -674,14 +807,20 @@ function CheckInStation({ go }) {
     try {
       const r = await db.checkIn(raw);
       setRes(r.person ? r : { missing: db.normToken(raw) });
-    } catch (e) { setRes({ error: true }); }
+      if (!r.person || r.already) beep(false);
+    } catch (e) { setRes({ error: true }); beep(false); }
     finally { setBusy(false); }
   };
   return (
     <div className="shell section" style={{ maxWidth: 640 }}>
       <button className="linkish" onClick={() => go("staff")}>&larr; Stations</button>
-      <h1 style={{ fontSize: 42, margin: "8px 0 20px" }}>Lobby check-in</h1>
-      <Scanner onCode={onCode} busy={busy} />
+      <h1 style={{ fontSize: 42, margin: "8px 0 16px" }}>Lobby check-in</h1>
+      <div className="scan-stats">
+        <div><b className="num">{people.filter((p) => p.checkedInAt).length}</b><span>Checked in</span></div>
+        <div><b className="num">{people.length - people.filter((p) => p.checkedInAt).length}</b><span>Still arriving</span></div>
+        <div><b className="num">{people.length}</b><span>RSVP'd</span></div>
+      </div>
+      <Scanner onCode={onCode} busy={busy} people={people} />
       {res && res.person && (
         <PersonCard key={res.person.token + res.already} person={res.person} tone={res.already ? "warn" : "ok"}
           headline={res.already ? "Already checked in at " + clock(res.person.checkedInAt) : "Welcome! Checked in"}>
@@ -722,7 +861,7 @@ function GiftStation({ go, people, toast }) {
     <div className="shell section" style={{ maxWidth: 640 }}>
       <button className="linkish" onClick={() => go("staff")}>&larr; Stations</button>
       <h1 style={{ fontSize: 42, margin: "8px 0 20px" }}>Gift counter</h1>
-      <Scanner onCode={onCode} busy={busy} />
+      <Scanner onCode={onCode} busy={busy} people={people} />
       {missing && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {missing}.</div>}
       {person && (person.giftClaimedAt ? (
         <PersonCard key={person.token + "c"} person={person} tone="bad" headline="ALREADY CLAIMED">
@@ -1074,7 +1213,35 @@ function exportCsv(rows) {
   a.click();
 }
 
+function QrModal({ person, onClose }) {
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  const h = houseOf(person.house);
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={"QR pass for " + person.name}>
+        <div className="modal-band" style={{ background: h.hex }}>
+          <div style={{ fontSize: 13, opacity: 0.92 }}>House {h.name} - {person.department}</div>
+          <div className="wide" style={{ fontSize: 24, fontWeight: 700 }}>{person.name}</div>
+        </div>
+        <div style={{ padding: 24, textAlign: "center" }}>
+          <QrImg token={person.token} size={240} style={{ margin: "0 auto", display: "block" }} />
+          <div className="num" style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, marginTop: 10 }}>{person.token}</div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 18, flexWrap: "wrap" }}>
+            <button className="btn btn-sm" onClick={() => downloadPass(person)}>Download pass</button>
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Roster({ people, go, toast }) {
+  const [qrFor, setQrFor] = useState(null);
   const [q, setQ] = useState("");
   const [house, setHouse] = useState("");
   const [dept, setDept] = useState("");
@@ -1126,10 +1293,11 @@ function Roster({ people, go, toast }) {
                   <td>{p.department}</td>
                   <td style={{ fontSize: 14 }}>{p.email}<br /><span style={{ color: "var(--ink-3)" }}>{p.phone}</span></td>
                   <td><span className="tag" style={{ background: h.hex + "22", color: h.hex }}><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span></td>
-                  <td className="num" style={{ fontSize: 14 }}><button className="linkish" onClick={() => go("pass", p.token)}>{p.token}</button></td>
+                  <td className="num" style={{ fontSize: 14 }}><button className="linkish" onClick={() => setQrFor(p)} title="Show QR">{p.token}</button></td>
                   <td>{p.checkedInAt ? <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>{clock(p.checkedInAt)}</span> : <span className="tag">Not yet</span>}</td>
                   <td>{p.giftClaimedAt ? <span className="tag tag-gift">{clock(p.giftClaimedAt)}</span> : <span className="tag">-</span>}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button className="btn btn-ghost btn-xs" onClick={() => setQrFor(p)}>QR</button>
                     {p.checkedInAt
                       ? <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.updatePerson(p.id, { checkedInAt: null, giftClaimedAt: null }), "Check-in reset")}>Undo in</button>
                       : <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.checkIn(p.token), "Checked in")}>Check in</button>}
@@ -1142,6 +1310,247 @@ function Roster({ people, go, toast }) {
             {rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", padding: 28 }}>Nobody matches those filters.</td></tr>}
           </tbody>
         </table>
+      </div>
+      {qrFor && <QrModal person={qrFor} onClose={() => setQrFor(null)} />}
+    </div>
+  );
+}
+
+/* ---------------- people in (live arrivals) ---------------- */
+
+function PeopleIn({ people, go }) {
+  const [q, setQ] = useState("");
+  const [house, setHouse] = useState("");
+  const inn = people.filter((p) => p.checkedInAt);
+  const rows = inn.filter((p) => {
+    const s = q.trim().toLowerCase();
+    if (s && ![p.name, p.token, p.department].some((v) => String(v).toLowerCase().includes(s))) return false;
+    if (house && p.house !== house) return false;
+    return true;
+  }).sort((a, b) => String(b.checkedInAt).localeCompare(String(a.checkedInAt)));
+  const pct = people.length ? Math.round((inn.length / people.length) * 100) : 0;
+  return (
+    <>
+      <div className="kpis">
+        <div className="kpi"><div className="num kpi-v"><Counter value={inn.length} /></div><div className="kpi-l">People in <b>{pct}%</b></div></div>
+        <div className="kpi"><div className="num kpi-v"><Counter value={people.length - inn.length} /></div><div className="kpi-l">Yet to arrive</div></div>
+        <div className="kpi"><div className="num kpi-v"><Counter value={inn.filter((p) => p.giftClaimedAt).length} /></div><div className="kpi-l">Gifts claimed</div></div>
+        <div className="kpi"><div className="num kpi-v">{inn.length ? clock(rows[0] ? rows[0].checkedInAt : inn[0].checkedInAt) : "-"}</div><div className="kpi-l">Latest arrival</div></div>
+      </div>
+      <div className="in-houses">
+        {HOUSES.map((h) => {
+          const all = people.filter((p) => p.house === h.key).length;
+          const n = inn.filter((p) => p.house === h.key).length;
+          return (
+            <button key={h.key} className="in-house" aria-pressed={house === h.key} style={{ "--h": h.hex }} onClick={() => setHouse(house === h.key ? "" : h.key)}>
+              <span className="chip-dot" style={{ background: h.hex }} />{h.name}<b className="num">{n}/{all}</b>
+            </button>
+          );
+        })}
+      </div>
+      <div className="panel" style={{ padding: 0, marginTop: 16 }}>
+        <div className="roster-tools">
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, department or pass code" />
+          <button className="btn btn-sm" onClick={() => go("checkin")}>Open QR scanner</button>
+          <button className="btn btn-ink btn-sm" onClick={() => exportCsv(rows)}>Export CSV ({rows.length})</button>
+        </div>
+        <ul className="in-list">
+          {rows.map((p) => {
+            const h = houseOf(p.house);
+            return (
+              <li key={p.id} className="in-row">
+                <span className="in-dot" style={{ background: h.hex }} />
+                <span className="in-name"><b>{p.name}</b><small>{p.department} - House {h.name}</small></span>
+                <span className="num in-code">{p.token}</span>
+                <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>In {clock(p.checkedInAt)}</span>
+                {p.giftClaimedAt ? <span className="tag tag-gift">Gift {clock(p.giftClaimedAt)}</span> : <span className="tag">Gift pending</span>}
+              </li>
+            );
+          })}
+          {rows.length === 0 && <li className="in-row" style={{ color: "var(--ink-3)" }}>{inn.length ? "Nobody matches." : "No one has checked in yet. Open the QR scanner to start."}</li>}
+        </ul>
+      </div>
+    </>
+  );
+}
+
+/* ---------------- email sender ---------------- */
+
+const TPL_KEY = "grab_email_tpl_v1";
+const TPL_PRESETS = {
+  confirm: {
+    label: "RSVP confirmation",
+    subject: "You're in - {name}, see you at Hari Sukan (House {house})",
+    message: "Your RSVP for Grab MY Hari Sukan is confirmed. You're in House {house}.\n\nShow the QR below at the lobby desk on {date} to check in, then at the gift counter to collect your door gift (one per pass).\n\nSee you at {venue}!",
+  },
+  reminder: {
+    label: "Event reminder",
+    subject: "Reminder: Grab MY Hari Sukan is on {date}",
+    message: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nWear your House {house} colours and bring this QR to check in at the lobby.",
+  },
+  thanks: {
+    label: "Thank you (after event)",
+    subject: "Thank you for joining Grab MY Hari Sukan",
+    message: "Thank you for being part of Grab MY Hari Sukan and cheering for House {house}.\n\nWe hope you had a great day. See you at the next one!",
+  },
+};
+function loadTpl() {
+  try { const t = JSON.parse(localStorage.getItem(TPL_KEY)); if (t && t.subject != null) return t; } catch (e) { /* ignore */ }
+  return { subject: TPL_PRESETS.confirm.subject, message: TPL_PRESETS.confirm.message };
+}
+
+function EmailPreview({ person, subject, message }) {
+  const h = houseOf(person.house);
+  const paras = fillTemplate(message, person).trim().split(/\n\s*\n/);
+  return (
+    <div className="mail">
+      <div className="mail-subject"><span>Subject</span>{fillTemplate(subject, person)}</div>
+      <div className="mail-card">
+        <div className="mail-head">
+          <img src={BADGE} alt="" height={46} />
+          <div className="mail-eyebrow">{EVENT.name.toUpperCase()} {EVENT.year}</div>
+          <div className="mail-date">{EVENT.dateLong}</div>
+        </div>
+        <div style={{ height: 8, background: h.hex }} />
+        <div className="mail-body">
+          <p>Hi <b>{person.name}</b>,</p>
+          {paras.map((t, i) => <p key={i} style={{ whiteSpace: "pre-line" }}>{t}</p>)}
+          <div className="mail-qr">
+            <QrImg token={person.token} size={150} />
+            <div className="num" style={{ fontWeight: 800, letterSpacing: 2, marginTop: 6 }}>{person.token}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmailCenter({ people, toast }) {
+  const [tpl, setTpl] = useState(loadTpl);
+  const [who, setWho] = useState("unsent");
+  const [house, setHouse] = useState("");
+  const [picked, setPicked] = useState(() => new Set());
+  const [testTo, setTestTo] = useState("");
+  const [prog, setProg] = useState(null); // { done, total, ok, fail, errors }
+  const stopRef = useRef(false);
+  const msgRef = useRef(null);
+
+  const save = (next) => { setTpl(next); try { localStorage.setItem(TPL_KEY, JSON.stringify(next)); } catch (e) { /* ignore */ } };
+  const insert = (field) => {
+    const el = msgRef.current;
+    const tag = "{" + field + "}";
+    if (!el) return save({ ...tpl, message: tpl.message + tag });
+    const a = el.selectionStart, b = el.selectionEnd;
+    save({ ...tpl, message: tpl.message.slice(0, a) + tag + tpl.message.slice(b) });
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + tag.length, a + tag.length); });
+  };
+
+  const recipients = people.filter((p) => {
+    if (house && p.house !== house) return false;
+    if (who === "unsent") return !p.emailSentAt;
+    if (who === "in") return !!p.checkedInAt;
+    if (who === "out") return !p.checkedInAt;
+    if (who === "picked") return picked.has(p.id);
+    return true;
+  });
+  const sample = recipients[0] || people[0] || { name: "Nurul Aisyah", house: "green", department: "Operations", token: "GRB-SAMPLE" };
+  const sending = prog && prog.done < prog.total && !prog.stopped;
+
+  const sendTest = async () => {
+    if (!/^\S+@\S+\.\S+$/.test(testTo.trim())) return toast("Enter a valid test email", "bad");
+    const r = await sendPassEmail(sample, { ...tpl, to: testTo.trim() });
+    toast(r.ok ? "Test sent to " + testTo.trim() : r.error, r.ok ? "ok" : "bad");
+  };
+
+  const sendAll = async () => {
+    const list = recipients.slice();
+    if (!list.length) return;
+    if (!window.confirm("Send this email to " + list.length + " " + (list.length === 1 ? "person" : "people") + "?")) return;
+    stopRef.current = false;
+    let ok = 0, fail = 0;
+    const errors = [];
+    setProg({ done: 0, total: list.length, ok, fail, errors });
+    for (let i = 0; i < list.length; i++) {
+      if (stopRef.current) { setProg((x) => ({ ...x, stopped: true })); return; }
+      const p = list[i];
+      const r = await sendPassEmail(p, tpl);
+      if (r.ok) { ok++; db.updatePerson(p.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); }
+      else { fail++; errors.push(p.name + " - " + r.error); }
+      setProg({ done: i + 1, total: list.length, ok, fail, errors: errors.slice() });
+      await new Promise((res) => setTimeout(res, 550)); // stay under Resend's rate limit
+    }
+    toast("Sent " + ok + (fail ? ", " + fail + " failed" : ""), fail ? "bad" : "ok");
+  };
+
+  const togglePick = (id) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const sentCount = people.filter((p) => p.emailSentAt).length;
+
+  return (
+    <div className="email-grid">
+      <div className="panel">
+        <h3 style={{ fontSize: 22, marginBottom: 6 }}>Template</h3>
+        <p className="hint" style={{ marginBottom: 14 }}>Each email includes the guest's own QR pass, pass code and event details automatically.</p>
+        <div className="tpl-presets">
+          {Object.entries(TPL_PRESETS).map(([k, t]) => (
+            <button key={k} className="chip" onClick={() => window.confirm("Replace the current template with \"" + t.label + "\"?") && save({ subject: t.subject, message: t.message })}>{t.label}</button>
+          ))}
+        </div>
+        <label className="field"><span className="field-label">Subject</span>
+          <input className="input" value={tpl.subject} onChange={(e) => save({ ...tpl, subject: e.target.value })} /></label>
+        <label className="field"><span className="field-label">Message</span>
+          <textarea ref={msgRef} className="input" rows={8} value={tpl.message} onChange={(e) => save({ ...tpl, message: e.target.value })} /></label>
+        <div className="tpl-fields">
+          <span className="hint">Insert:</span>
+          {EMAIL_FIELDS.map((f) => <button key={f} className="btn btn-ghost btn-xs" onClick={() => insert(f)}>{"{" + f + "}"}</button>)}
+        </div>
+
+        <h3 style={{ fontSize: 22, margin: "26px 0 12px" }}>Send to</h3>
+        <div className="tpl-presets">
+          {[["unsent", "Not emailed yet"], ["all", "Everyone"], ["out", "Not arrived"], ["in", "Checked in"], ["picked", "Pick people"]].map(([k, l]) => (
+            <button key={k} className="chip" aria-pressed={who === k} onClick={() => setWho(k)}>{l}</button>
+          ))}
+        </div>
+        <select className="input" value={house} onChange={(e) => setHouse(e.target.value)} style={{ marginTop: 10 }}>
+          <option value="">All houses</option>
+          {HOUSES.map((h) => <option key={h.key} value={h.key}>House {h.name}</option>)}
+        </select>
+        {who === "picked" && (
+          <div className="pick-list">
+            {people.filter((p) => !house || p.house === house).map((p) => (
+              <label key={p.id} className="pick-row">
+                <input type="checkbox" checked={picked.has(p.id)} onChange={() => togglePick(p.id)} />
+                <span className="chip-dot" style={{ background: houseOf(p.house).hex }} />
+                <span style={{ flex: 1 }}>{p.name}<small>{p.email}</small></span>
+                {p.emailSentAt && <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>Sent</span>}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className="hint" style={{ marginTop: 12 }}>{recipients.length} recipient{recipients.length === 1 ? "" : "s"} selected - {sentCount}/{people.length} guests emailed so far.</p>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+          {sending
+            ? <button className="btn btn-ink" onClick={() => { stopRef.current = true; }}>Stop sending</button>
+            : <button className="btn" disabled={!recipients.length} onClick={sendAll}>Send to {recipients.length} <span className="btn-arrow">&rarr;</span></button>}
+        </div>
+        {prog && (
+          <div className="send-prog">
+            <div className="bar"><span style={{ width: (prog.done / prog.total) * 100 + "%", background: "var(--grab)" }} /></div>
+            <p className="hint">{prog.stopped ? "Stopped" : prog.done < prog.total ? "Sending" : "Done"} - {prog.done}/{prog.total} - {prog.ok} sent{prog.fail ? ", " + prog.fail + " failed" : ""}</p>
+            {prog.errors.length > 0 && <ul className="send-errs">{prog.errors.slice(0, 6).map((e, i) => <li key={i}>{e}</li>)}</ul>}
+          </div>
+        )}
+
+        <h3 style={{ fontSize: 18, margin: "26px 0 10px" }}>Send a test first</h3>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@grab.com" />
+          <button className="btn btn-ghost" onClick={sendTest}>Send test</button>
+        </div>
+        <p className="hint" style={{ marginTop: 8 }}>Uses {sample.name}'s details and QR so you can see the real email.</p>
+      </div>
+      <div className="email-side">
+        <div className="field-label" style={{ marginBottom: 10 }}>Live preview - {sample.name}</div>
+        <EmailPreview person={sample} subject={tpl.subject} message={tpl.message} />
       </div>
     </div>
   );
@@ -1268,16 +1677,19 @@ function Admin({ people, scores, totals, go, toast }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
         <h1 style={{ fontSize: 46, marginRight: "auto" }}>Admin</h1>
         {db.MODE === "demo" && <button className="btn btn-ghost btn-sm" onClick={() => window.confirm("Reset all demo data?") && db.resetDemo()}>Reset demo data</button>}
+        <button className="btn btn-sm" onClick={() => go("checkin")}>QR scanner</button>
         <button className="btn btn-ghost btn-sm" onClick={() => go("staff")}>Staff stations</button>
         <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
       </div>
       <div className="tabs" role="tablist">
-        {[["overview", "Overview"], ["roster", "Guests (" + people.length + ")"], ["score", "Scoring"], ["ledger", "Score ledger"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["ledger", "Score ledger"]].map(([k, label]) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
       {tab === "overview" && <Overview people={people} />}
       {tab === "roster" && <Roster people={people} go={go} toast={toast} />}
+      {tab === "in" && <PeopleIn people={people} go={go} />}
+      {tab === "email" && <EmailCenter people={people} toast={toast} />}
       {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
       {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
     </div>
@@ -1354,7 +1766,7 @@ export default function App() {
   else if (page === "rsvp") body = <Rsvp go={go} />;
   else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
-  else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} /></PinGate>;
+  else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
   else if (page === "gift") body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
   else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
