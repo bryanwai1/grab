@@ -1788,13 +1788,11 @@ function Agenda({ go }) {
   return (
     <div className="shell section" style={{ maxWidth: 760 }}>
       <div className="agenda-head">
-        <Badge height={96} />
-        <div>
-          <span className="eyebrow-pill"><span className="live-dot" /> {EVENT.dateLong}</span>
-          <h1 style={{ fontSize: 46, margin: "12px 0 6px" }}>Agenda</h1>
-          <p className="lede">{EVENT.venue} - doors open {EVENT.doorsOpen}</p>
-          <p className="hint" style={{ marginTop: 6 }}>{EVENT.address} - <a className="linkish" href={mapsUrl} target="_blank" rel="noreferrer">Open in Google Maps</a></p>
-        </div>
+        <Badge height={110} />
+        <span className="eyebrow-pill"><span className="live-dot" /> {EVENT.dateLong}</span>
+        <h1 className="agenda-title">Agenda</h1>
+        <p className="agenda-sub">{EVENT.venue} - Registration starts from {EVENT.registration}</p>
+        <p className="hint">{EVENT.address} - <a className="linkish" href={mapsUrl} target="_blank" rel="noreferrer">Open in Google Maps</a></p>
       </div>
       <div className="panel" style={{ marginTop: 24 }}>
         <div className="route" style={{ "--route-fill": live < 0 ? "0%" : Math.round(((live + 0.5) / ITINERARY.length) * 100) + "%" }}>

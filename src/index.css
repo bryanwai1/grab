@@ -902,10 +902,12 @@ textarea.input { resize: vertical; min-height: 150px; line-height: 1.5; }
 @media (max-width: 600px) { .scan-btns { flex-direction: column; } .cam-seg { align-self: stretch; } .cam-seg button { flex: 1; } }
 
 /* ---------- agenda ---------- */
-.agenda-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-.agenda-head img { height: 96px; width: auto; }
+.agenda-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+.agenda-head img { height: 110px; width: auto; margin: 0 auto 6px; }
+.agenda-title { font-size: 32px; margin: 4px 0 0; }
+.agenda-sub { font-size: 16px; color: var(--ink-2); margin: 0; font-weight: 600; }
 .agenda-now { margin-left: 10px; background: var(--grab); color: #fff; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; }
-@media (max-width: 600px) { .agenda-head img { height: 72px; } }
+@media (max-width: 600px) { .agenda-head img { height: 90px; } .agenda-title { font-size: 28px; } }
 .focus-addr { color: inherit; opacity: .85; font-size: .85em; text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- dress code ---------- */
