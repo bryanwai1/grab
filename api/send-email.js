@@ -25,6 +25,12 @@ export default async function handler(req, res) {
   const logo = /^https:\/\//.test(logoUrl || "")
     ? `<img src="${esc(logoUrl)}" height="120" alt="${esc(event.name || "Grab")}" style="display:block;height:120px;width:auto;margin:0 auto 16px"/>` : "";
 
+  const dressList = Array.isArray(event.dressCode) ? event.dressCode : [];
+  const dress = dressList.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;background:#f1f6f1;border-left:5px solid ${color};border-radius:10px"><tr><td style="padding:14px 18px">
+    <div style="font:700 12px Arial;letter-spacing:2px;color:#06180e;text-transform:uppercase;margin-bottom:6px">Dress code</div>
+    ${dressList.map((d, i) => `<div style="font:15px Arial;color:#2b4235;line-height:1.6">&bull; ${esc(i === 0 && house ? String(d).replace("your house colour", "House " + house + " colour") : d)}</div>`).join("")}
+  </td></tr></table>` : "";
+
   const html = `<!doctype html><html><body style="margin:0;background:#f1f6f1">
 <table width="100%" cellpadding="0" cellspacing="0" style="padding:26px 12px"><tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:18px;overflow:hidden">
@@ -36,6 +42,7 @@ export default async function handler(req, res) {
 <tr><td style="padding:26px 32px 0">
   <p style="font:16px Arial;color:#06180e;margin:0 0 12px">Hi <strong>${esc(name)}</strong>,</p>
   ${paras}
+  ${dress}
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px">${row("Pass code", token)}${row("House", house)}${row("Department", department)}${row("Date", event.dateLong)}${row("Venue", event.venue)}${row("Address", event.address)}${row("Doors open", event.doorsOpen)}</table>
 </td></tr>
 <tr><td align="center" style="padding:26px 32px">

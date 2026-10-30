@@ -8,6 +8,12 @@ export const EVENT = {
   venue: "Arena Sukan Kuala Lumpur (ASKL)",
   address: "210, Jalan Ayer Jerneh, Mukim, Setapak, 53200 Kuala Lumpur",
   doorsOpen: "08:00",
+  // Shown as a "Dress code" box in the email, on the pass and on the agenda.
+  dressCode: [
+    "Hari Sukan T-shirt in your house colour",
+    "Comfortable sportswear",
+    "Sports shoes for the activities",
+  ],
   gift: "Door gift",
   // No door gift this year: hides the gift counter, gift status and gift wording everywhere.
   hasGift: false,

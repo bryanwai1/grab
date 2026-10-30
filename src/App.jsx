@@ -30,6 +30,15 @@ const calmMotion = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
 const stamp = (iso) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+function DressCode({ house }) {
+  const h = house ? houseOf(house) : null;
+  return (
+    <div className="dress" style={h ? { "--h": h.hex } : null}>
+      <div className="dress-t">Dress code</div>
+      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", "House " + h.name + " colour") : d}</li>)}</ul>
+    </div>
+  );
+}
 const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(EVENT.venue + ", " + EVENT.address);
 const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
 
@@ -733,6 +742,7 @@ function Pass({ arg, people, go, toast }) {
           <div className="kv"><span>Phone</span><span>{person.phone}</span></div>
           <div className="kv"><span>When</span><span>{EVENT.dateShort}, doors {EVENT.doorsOpen}</span></div>
           <div className="kv"><span>Where</span><span>{EVENT.venue}<br /><a className="linkish" href={mapsUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 500 }}>{EVENT.address}</a></span></div>
+          <DressCode house={person.house} />
 
           {EVENT.hasGift && <div className="gift-box">
             <strong>{EVENT.gift}</strong>
@@ -1482,6 +1492,7 @@ function EmailPreview({ person, subject, message }) {
         <div className="mail-body">
           <p>Hi <b>{person.name}</b>,</p>
           {paras.map((t, i) => <p key={i} style={{ whiteSpace: "pre-line" }}>{t}</p>)}
+          <DressCode house={person.house} />
           <div className="mail-qr">
             <QrImg token={person.token} size={150} />
             <div className="num" style={{ fontWeight: 800, letterSpacing: 2, marginTop: 6 }}>{person.token}</div>
@@ -1796,6 +1807,7 @@ function Agenda({ go }) {
           ))}
         </div>
       </div>
+      <div style={{ marginTop: 20 }}><DressCode /></div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 }}>
         <button className="btn" onClick={() => go("pass")}>My QR pass <span className="btn-arrow">&rarr;</span></button>
         <button className="btn btn-ghost" onClick={() => go("scores")}>Live scores</button>
