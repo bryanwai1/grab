@@ -874,3 +874,28 @@ textarea.input { resize: vertical; min-height: 150px; line-height: 1.5; }
 .lookup-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; background: #fff; border: 0; font: inherit; cursor: pointer; }
 .lookup-list button:hover { background: var(--grab-wash); }
 .lookup-list small { display: block; font-size: 12px; color: var(--ink-3); }
+
+/* ---------- camera switch ---------- */
+.scan-ctrls { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.scan-ctrls .scan-torch { position: static; }
+.scan-btns { display: flex; gap: 10px; margin-top: 14px; }
+.scan-btns > .btn { flex: 1; }
+.cam-seg { display: flex; background: var(--paper-2); border-radius: 999px; padding: 4px; flex: none; }
+.cam-seg button { border: 0; background: transparent; font: inherit; font-weight: 700; font-size: 14px; padding: 0 16px; border-radius: 999px; cursor: pointer; color: var(--ink-2); min-height: 40px; }
+.cam-seg button[aria-pressed="true"] { background: var(--grab); color: #fff; }
+
+/* ---------- welcome pop-up ---------- */
+.pop-back { position: fixed; inset: 0; z-index: 90; background: rgba(4,18,10,.6); display: grid; place-items: center; padding: 16px; animation: fade .2s ease; }
+.pop { position: relative; overflow: hidden; width: min(520px, 100%); border-radius: 28px; padding: 40px 30px 28px; text-align: center; color: #fff;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--h) 82%, #fff) 0%, var(--h) 55%, color-mix(in srgb, var(--h) 70%, #000) 100%);
+  box-shadow: 0 40px 90px -30px rgba(0,0,0,.6); animation: popin .45s cubic-bezier(.2,1.4,.4,1) both; cursor: pointer; }
+.pop-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pop > div { position: relative; }
+.pop-top { font-size: 15px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; opacity: .92; }
+.pop-name { font-family: var(--wide, inherit); font-size: clamp(32px, 8vw, 46px); font-weight: 800; line-height: 1.05; margin: 12px 0 14px; }
+.pop-team { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,.2); border-radius: 999px; padding: 8px 16px; font-weight: 700; font-size: 15px; }
+.pop-line { font-size: 19px; font-weight: 700; margin-top: 20px; }
+.pop-sub { font-size: 15px; opacity: .9; margin-top: 6px; }
+.pop-tap { font-size: 12px; opacity: .7; margin-top: 22px; letter-spacing: 1px; }
+@keyframes popin { from { opacity: 0; transform: scale(.82) translateY(16px); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) { .scan-btns { flex-direction: column; } .cam-seg { align-self: stretch; } .cam-seg button { flex: 1; } }

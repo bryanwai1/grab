@@ -343,6 +343,7 @@ function beep(ok = true) {
 }
 
 const CAM_KEY = "grab_scan_cam_on";
+const FACE_KEY = "grab_scan_facing";
 
 // Camera QR scanner. Uses the browser's native BarcodeDetector when present (fast on
 // Android/Chrome), otherwise jsQR on a downscaled frame plus a full-res centre crop.
@@ -354,6 +355,8 @@ function Scanner({ onCode, busy, people }) {
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState(0);
   const [torch, setTorch] = useState(null); // null = unsupported
+  const [facing, setFacing] = useState(() => { try { return localStorage.getItem(FACE_KEY) || "environment"; } catch (e) { return "environment"; } });
+  const facingRef = useRef(facing);
   const last = useRef({ v: "", t: 0 });
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -367,7 +370,8 @@ function Scanner({ onCode, busy, people }) {
     if (remember) { try { localStorage.removeItem(CAM_KEY); } catch (e) { /* ignore */ } }
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (face) => {
+    const want = face || facingRef.current;
     setCamErr("");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCamErr("This browser can't open the camera. Use Chrome or Safari over https, or type the code below.");
@@ -376,8 +380,10 @@ function Scanner({ onCode, busy, people }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: { ideal: want }, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
+      const v0 = video.current;
+      if (v0 && v0.srcObject) v0.srcObject.getTracks().forEach((t) => t.stop());
       video.current.srcObject = stream;
       video.current.setAttribute("playsinline", "true");
       await video.current.play();
@@ -395,6 +401,17 @@ function Scanner({ onCode, busy, people }) {
         : "Camera not available. Type the pass code or name below.");
     }
   }, []);
+
+  const flipCamera = async () => {
+    const next = facingRef.current === "environment" ? "user" : "environment";
+    facingRef.current = next;
+    setFacing(next);
+    try { localStorage.setItem(FACE_KEY, next); } catch (e) { /* ignore */ }
+    const v = video.current;
+    if (v && v.srcObject) { v.srcObject.getTracks().forEach((t) => t.stop()); v.srcObject = null; }
+    setOn(false); setTorch(null);
+    await start(next);
+  };
 
   const toggleTorch = async () => {
     const v = video.current;
@@ -473,13 +490,16 @@ function Scanner({ onCode, busy, people }) {
   return (
     <div className="panel">
       <div className="scan-view">
-        <video ref={video} playsInline muted autoPlay className="scan-video" style={{ opacity: on ? 1 : 0 }} />
+        <video ref={video} playsInline muted autoPlay className="scan-video" style={{ opacity: on ? 1 : 0, transform: facing === "user" ? "scaleX(-1)" : "none" }} />
         <canvas ref={canvas} style={{ display: "none" }} />
         {on ? (
           <>
             <span className="scan-frame" />
             <span className="scan-live"><span className="live-dot" /> Scanning</span>
-            {torch !== null && <button className="scan-torch" onClick={toggleTorch} aria-pressed={torch}>{torch ? "Torch on" : "Torch"}</button>}
+            <div className="scan-ctrls">
+              {torch !== null && <button className="scan-torch" onClick={toggleTorch} aria-pressed={torch}>{torch ? "Torch on" : "Torch"}</button>}
+              <button className="scan-torch" onClick={flipCamera} title="Switch front / back camera">&#8635; {facing === "user" ? "Front" : "Back"} camera</button>
+            </div>
             {flash > 0 && <span key={flash} className="scan-flash" />}
           </>
         ) : (
@@ -489,9 +509,16 @@ function Scanner({ onCode, busy, people }) {
           </div>
         )}
       </div>
-      <button className={"btn" + (on ? " btn-ghost" : "")} style={{ width: "100%", marginTop: 14 }} onClick={on ? () => stop(true) : start}>
-        {on ? "Stop camera" : "Start camera"}
-      </button>
+      <div className="scan-btns">
+        <button className={"btn" + (on ? " btn-ghost" : "")} onClick={on ? () => stop(true) : () => start()}>
+          {on ? "Stop camera" : "Start camera"}
+        </button>
+        <div className="cam-seg" role="group" aria-label="Camera">
+          {[["environment", "Back"], ["user", "Front"]].map(([k, l]) => (
+            <button key={k} aria-pressed={facing === k} onClick={() => (facing === k ? (!on && start(k)) : flipCamera())}>{l}</button>
+          ))}
+        </div>
+      </div>
       {camErr && <p className="err" style={{ marginTop: 10 }}>{camErr}</p>}
       <div className="manual">
         <input className="input" value={code} onChange={(e) => setCode(e.target.value)}
@@ -799,14 +826,45 @@ function PersonCard({ person, tone, headline, children }) {
   );
 }
 
+function ScanPopup({ person, kind, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    const k = (e) => (e.key === "Escape" || e.key === "Enter") && onClose();
+    window.addEventListener("keydown", k);
+    return () => { clearTimeout(t); window.removeEventListener("keydown", k); };
+  }, [onClose]);
+  const h = houseOf(person.house);
+  const msg = {
+    in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: "Next stop: the gift counter." },
+    again: { top: "Welcome back!", line: "You're already checked in at " + clock(person.checkedInAt) + ".", sub: "Thank you - enjoy the day." },
+    gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go House " + h.name + "!" },
+  }[kind];
+  return (
+    <div className="pop-back" onClick={onClose} role="dialog" aria-live="assertive">
+      <div className="pop" style={{ "--h": h.hex }} onClick={onClose}>
+        <Particles className="pop-fx" density={26} confetti />
+        <div className="pop-top">{msg.top}</div>
+        <div className="pop-name">{person.name}</div>
+        <div className="pop-team"><span className="chip-dot" style={{ background: "#fff" }} />House {h.name} &middot; {person.department}</div>
+        <div className="pop-line">{msg.line}</div>
+        <div className="pop-sub">{msg.sub}</div>
+        <div className="pop-tap">Tap to continue</div>
+      </div>
+    </div>
+  );
+}
+
 function CheckInStation({ go, people }) {
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [pop, setPop] = useState(null);
+  const closePop = useCallback(() => setPop(null), []);
   const onCode = async (raw) => {
     setBusy(true);
     try {
       const r = await db.checkIn(raw);
       setRes(r.person ? r : { missing: db.normToken(raw) });
+      if (r.person) setPop({ person: r.person, kind: r.already ? "again" : "in", id: Date.now() });
       if (!r.person || r.already) beep(false);
     } catch (e) { setRes({ error: true }); beep(false); }
     finally { setBusy(false); }
@@ -830,6 +888,7 @@ function CheckInStation({ go, people }) {
       )}
       {res && res.missing !== undefined && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {res.missing || "that code"}. Send the guest to the help desk.</div>}
       {res && res.error && <div className="banner banner-bad" style={{ marginTop: 20 }}>Connection problem - try again.</div>}
+      {pop && <ScanPopup key={pop.id} person={pop.person} kind={pop.kind} onClose={closePop} />}
     </div>
   );
 }
@@ -850,9 +909,11 @@ function GiftStation({ go, people, toast }) {
     } catch (e) { setMissing(t); }
     finally { setBusy(false); }
   };
+  const [pop, setPop] = useState(null);
+  const closePop = useCallback(() => setPop(null), []);
   const claim = async () => {
     const r = await db.claimGift(token);
-    if (r.ok) toast("Gift redeemed for " + r.person.name, "ok");
+    if (r.ok) { toast("Gift redeemed for " + r.person.name, "ok"); setPop({ person: r.person, id: Date.now() }); }
     else if (r.already) toast("Already claimed!", "bad");
   };
   const checkInNow = async () => { await db.checkIn(token); };
@@ -879,6 +940,7 @@ function GiftStation({ go, people, toast }) {
           <p className="hint" style={{ marginTop: 10 }}>Hand over the gift once this card turns to CLAIMED.</p>
         </PersonCard>
       ))}
+      {pop && <ScanPopup key={pop.id} person={pop.person} kind="gift" onClose={closePop} />}
     </div>
   );
 }
