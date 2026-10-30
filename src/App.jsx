@@ -30,13 +30,14 @@ const calmMotion = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
 const stamp = (iso) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(EVENT.venue + ", " + EVENT.address);
 const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
 
 // Template placeholders the admin can use in the email subject and message.
-const EMAIL_FIELDS = ["name", "house", "department", "code", "date", "venue", "doors", "link"];
+const EMAIL_FIELDS = ["name", "house", "department", "code", "date", "venue", "address", "doors", "link"];
 function fillTemplate(tpl, p) {
   const v = { name: p.name, house: houseOf(p.house).name, department: p.department, code: p.token,
-    date: EVENT.dateLong, venue: EVENT.venue, doors: EVENT.doorsOpen, link: passUrl(p.token) };
+    date: EVENT.dateLong, venue: EVENT.venue, address: EVENT.address, doors: EVENT.doorsOpen, link: passUrl(p.token) };
   return String(tpl || "").replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m));
 }
 // Sends one Grab-themed email with the person's QR pass. Returns { ok, error }.
@@ -560,7 +561,7 @@ function Home({ go, people }) {
       <div className="shell hero-in focus-in">
         <span className="hero-eyebrow"><span className="live-dot" />RSVP is open</span>
         <h1 className="focus-title"><Badge height={170} style={{ margin: "0 auto", maxWidth: "100%", objectFit: "contain" }} /></h1>
-        <p className="focus-meta">{EVENT.dateLong}<br />{EVENT.venue}</p>
+        <p className="focus-meta">{EVENT.dateLong}<br />{EVENT.venue}<br /><a className="focus-addr" href={mapsUrl} target="_blank" rel="noreferrer">{EVENT.address}</a></p>
         <div className="focus-cta">
           <button className="btn btn-xl" onClick={() => go("rsvp")}>RSVP now <span className="btn-arrow">&rarr;</span></button>
           <button className="btn btn-ghost" onClick={() => go("pass", saved || "")}>{saved ? "Open my pass" : "Already RSVP'd? Find my pass"}</button>
@@ -731,6 +732,7 @@ function Pass({ arg, people, go, toast }) {
           <div className="kv"><span>Email</span><span>{person.email}</span></div>
           <div className="kv"><span>Phone</span><span>{person.phone}</span></div>
           <div className="kv"><span>When</span><span>{EVENT.dateShort}, doors {EVENT.doorsOpen}</span></div>
+          <div className="kv"><span>Where</span><span>{EVENT.venue}<br /><a className="linkish" href={mapsUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 500 }}>{EVENT.address}</a></span></div>
 
           {EVENT.hasGift && <div className="gift-box">
             <strong>{EVENT.gift}</strong>
@@ -1780,6 +1782,7 @@ function Agenda({ go }) {
           <span className="eyebrow-pill"><span className="live-dot" /> {EVENT.dateLong}</span>
           <h1 style={{ fontSize: 46, margin: "12px 0 6px" }}>Agenda</h1>
           <p className="lede">{EVENT.venue} - doors open {EVENT.doorsOpen}</p>
+          <p className="hint" style={{ marginTop: 6 }}>{EVENT.address} - <a className="linkish" href={mapsUrl} target="_blank" rel="noreferrer">Open in Google Maps</a></p>
         </div>
       </div>
       <div className="panel" style={{ marginTop: 24 }}>

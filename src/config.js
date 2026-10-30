@@ -6,6 +6,7 @@ export const EVENT = {
   dateLong: "Friday, 20 November 2026",
   dateShort: "20 Nov 2026",
   venue: "Arena Sukan Kuala Lumpur (ASKL)",
+  address: "210, Jalan Ayer Jerneh, Mukim, Setapak, 53200 Kuala Lumpur",
   doorsOpen: "08:00",
   gift: "Door gift",
   // No door gift this year: hides the gift counter, gift status and gift wording everywhere.

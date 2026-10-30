@@ -906,3 +906,4 @@ textarea.input { resize: vertical; min-height: 150px; line-height: 1.5; }
 .agenda-head img { height: 96px; width: auto; }
 .agenda-now { margin-left: 10px; background: var(--grab); color: #fff; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; }
 @media (max-width: 600px) { .agenda-head img { height: 72px; } }
+.focus-addr { color: inherit; opacity: .85; font-size: .85em; text-decoration: underline; text-underline-offset: 3px; }

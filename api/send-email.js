@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 <tr><td style="padding:26px 32px 0">
   <p style="font:16px Arial;color:#06180e;margin:0 0 12px">Hi <strong>${esc(name)}</strong>,</p>
   ${paras}
-  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px">${row("Pass code", token)}${row("House", house)}${row("Department", department)}${row("Date", event.dateLong)}${row("Venue", event.venue)}${row("Doors open", event.doorsOpen)}</table>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px">${row("Pass code", token)}${row("House", house)}${row("Department", department)}${row("Date", event.dateLong)}${row("Venue", event.venue)}${row("Address", event.address)}${row("Doors open", event.doorsOpen)}</table>
 </td></tr>
 <tr><td align="center" style="padding:26px 32px">
   <div style="font:600 11px Arial;letter-spacing:3px;color:#6b7f74;text-transform:uppercase;margin-bottom:12px">Your check-in QR</div>
@@ -44,6 +44,7 @@ export default async function handler(req, res) {
   <div style="font:700 18px Arial;letter-spacing:2px;margin-top:10px;color:#06180e">${esc(token)}</div>
   <div style="margin-top:18px">
   ${passUrl ? `<a href="${esc(passUrl)}" target="_blank" style="display:inline-block;margin:6px;background:#00B14F;color:#fff;font:700 15px Arial;padding:13px 26px;border-radius:999px;text-decoration:none">Open my pass</a>` : ""}
+  ${event.address ? `<a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent((event.venue || "") + ", " + event.address)}" target="_blank" style="display:inline-block;margin:6px;background:#fff;color:#06180e;border:2px solid #06180e;font:700 15px Arial;padding:11px 24px;border-radius:999px;text-decoration:none">Get directions</a>` : ""}
   ${/^https?:\/\//.test(agendaUrl || "") ? `<a href="${esc(agendaUrl)}" target="_blank" style="display:inline-block;margin:6px;background:#06180e;color:#fff;font:700 15px Arial;padding:13px 26px;border-radius:999px;text-decoration:none">View agenda</a>` : ""}
   </div>
 </td></tr>
