@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
-import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ADMIN_PASSWORD, STAFF_PIN } from "./config";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN } from "./config";
 import * as db from "./store";
 
 /* ================= helpers ================= */
@@ -57,7 +57,7 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, department: p.department,
-        passUrl: passUrl(p.token), agendaUrl: window.location.origin + window.location.pathname + "#/agenda", logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
+        passUrl: passUrl(p.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
         subject: subject ? fillTemplate(subject, p) : undefined,
         message: message ? fillTemplate(message, p) : undefined,
         event: EVENT,
@@ -224,15 +224,21 @@ function Nav({ page, go }) {
 }
 
 function Ticker({ totals, go }) {
-  const now = ITINERARY[2];
-  const next = ITINERARY[3];
+  // On event day follow the clock; before it, show the first item.
+  const d = new Date();
+  const isDay = d.toDateString() === new Date(EVENT.dateLong.replace(/^\w+,\s*/, "")).toDateString();
+  const mins = d.getHours() * 60 + d.getMinutes();
+  let i = -1;
+  if (isDay) ITINERARY.forEach((it, k) => { if (toMin(it.time) <= mins) i = k; });
+  const now = i >= 0 ? ITINERARY[i] : null;
+  const next = ITINERARY[i + 1];
   return (
     <div className="ticker">
       <div className="shell ticker-in">
         <span className="live-dot" />
-        <span className="ticker-now">Now: {now.name}</span>
-        <span className="ticker-sep">|</span>
-        <span>Next {next.time} {next.name}</span>
+        <button className="ticker-now linkish-plain" onClick={() => go("agenda")}>{now ? "Now: " + now.name : EVENT.dateShort}</button>
+        {next && <><span className="ticker-sep">|</span>
+        <span>{now ? "Next" : "Starts"} {next.time} {next.name}</span></>}
         <div className="ticker-rail">
           {CHALLENGES.map((c) => {
             const lead = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
@@ -1776,7 +1782,14 @@ function Admin({ people, scores, totals, go, toast }) {
 
 /* ================= agenda ================= */
 
-const toMin = (t) => { const m = String(t).match(/(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : 0; };
+const toMin = (t) => {
+  const m = String(t).toLowerCase().match(/(\d{1,2})[.:](\d{2})\s*(am|pm)?/);
+  if (!m) return 0;
+  let h = +m[1];
+  if (m[3] === "pm" && h < 12) h += 12;
+  return h * 60 + +m[2];
+};
+const pdfUrl = () => window.location.origin + (process.env.PUBLIC_URL || "") + "/" + ITINERARY_PDF;
 
 function Agenda({ go }) {
   // Highlight the live slot only on event day.
@@ -1800,13 +1813,14 @@ function Agenda({ go }) {
             <div key={i} className={"stop" + (i < live ? " stop-done" : i === live ? " stop-live" : "")}>
               <div className="stop-time">{it.time}{i === live && <b className="agenda-now">Happening now</b>}</div>
               <div className="stop-name">{it.name}</div>
-              <div className="stop-note">{it.note}</div>
+              {it.note && <div className="stop-note">{it.note}</div>}
             </div>
           ))}
         </div>
       </div>
       <div style={{ marginTop: 20 }}><DressCode /></div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 }}>
+        <a className="btn btn-ink" href={pdfUrl()} target="_blank" rel="noreferrer">Open itinerary PDF</a>
         <button className="btn" onClick={() => go("pass")}>My QR pass <span className="btn-arrow">&rarr;</span></button>
         <button className="btn btn-ghost" onClick={() => go("scores")}>Live scores</button>
       </div>

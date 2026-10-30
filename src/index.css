@@ -914,3 +914,5 @@ textarea.input { resize: vertical; min-height: 150px; line-height: 1.5; }
 .dress { --h: var(--grab); margin-top: 18px; background: var(--paper-2); border-left: 5px solid var(--h); border-radius: 12px; padding: 14px 18px; text-align: left; }
 .dress-t { font-size: 12px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--ink); margin-bottom: 6px; }
 .dress ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+.linkish-plain { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+a.btn { text-decoration: none; }

@@ -50,14 +50,23 @@ export const CHALLENGES = [
 
 export const RANK_POINTS = [4, 3, 2, 1];
 
+// From Itinerary Hari Sukan 2026.pdf (public/itinerary-hari-sukan-2026.pdf)
+export const ITINERARY_PDF = "itinerary-hari-sukan-2026.pdf";
 export const ITINERARY = [
-  { time: "08:00", name: "Doors open and check-in", note: "Show your QR at the lobby registration counter to check in." },
-  { time: "09:00", name: "Opening and house call", note: "Main Hall. All four houses assemble." },
-  { time: "09:30", name: "Fitness Challenge", note: "Hall A, East Deck - waves 1 to 4." },
-  { time: "11:15", name: "Obstacles", note: "Outdoor Field. Wet shoes guaranteed." },
-  { time: "12:45", name: "Lunch", note: "Level 1 canteen and the food trucks out front." },
-  { time: "14:00", name: "Bingo Dash", note: "Campus-wide. Ends the moment the horn goes." },
-  { time: "16:00", name: "Prize giving", note: "Three winners - one per challenge. Main Hall." },
+  { time: "8.00am", name: "Registration", note: "Scan your QR at the Registration Counter, lobby floor. Breakfast provided." },
+  { time: "8.30am", name: "House gathering", note: "All 4 houses gather at Lobby Gate B for entry." },
+  { time: "8.45am", name: "Get ready to march in", note: "" },
+  { time: "9.00am", name: "Opening and welcome speech", note: "" },
+  { time: "9.25am", name: "Team war cry", note: "" },
+  { time: "9.45am", name: "Warm-up exercise", note: "" },
+  { time: "10.00am", name: "Safety briefing and group photo", note: "" },
+  { time: "10.30am", name: "Competitions start", note: "Obstacles, Fitness Challenge and Bingo Dash. Until 12.30pm." },
+  { time: "12.30pm", name: "Lunch break and prayer", note: "Interactive games and photobooth at the lobby." },
+  { time: "2.00pm", name: "Gather at Level 4 Sport Hall", note: "All participants." },
+  { time: "2.30pm", name: "Team war cry", note: "" },
+  { time: "2.45pm", name: "Tug of war", note: "" },
+  { time: "3.30pm", name: "Award ceremony", note: "" },
+  { time: "4.00pm", name: "End of ceremony", note: "" },
 ];
 
 // Admin password. Set REACT_APP_ADMIN_PASSWORD in Vercel for the real event.
