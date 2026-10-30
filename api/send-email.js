@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!RESEND_KEY) return res.status(200).json({ ok: false, skipped: true, error: "RESEND_KEY not set in Vercel" });
 
-  const { to, name, token, house, houseHex, department, passUrl, logoUrl, subject, message, event = {} } = req.body || {};
+  const { to, name, token, house, houseHex, department, passUrl, agendaUrl, logoUrl, subject, message, event = {} } = req.body || {};
   if (!to || !name || !token) return res.status(400).json({ ok: false, error: "Missing fields" });
 
   const esc = (v) => String(v == null ? "" : v).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
@@ -43,7 +43,10 @@ export default async function handler(req, res) {
   <div style="font:600 11px Arial;letter-spacing:3px;color:#6b7f74;text-transform:uppercase;margin-bottom:12px">Your check-in QR</div>
   <img src="${qrUrl}" width="220" height="220" alt="QR ${esc(token)}" style="display:block;border:8px solid #fff;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.12)"/>
   <div style="font:700 18px Arial;letter-spacing:2px;margin-top:10px;color:#06180e">${esc(token)}</div>
-  ${passUrl ? `<a href="${esc(passUrl)}" style="display:inline-block;margin-top:18px;background:#00B14F;color:#fff;font:700 15px Arial;padding:13px 26px;border-radius:999px;text-decoration:none">Open my pass</a>` : ""}
+  <div style="margin-top:18px">
+  ${passUrl ? `<a href="${esc(passUrl)}" target="_blank" style="display:inline-block;margin:6px;background:#00B14F;color:#fff;font:700 15px Arial;padding:13px 26px;border-radius:999px;text-decoration:none">Open my pass</a>` : ""}
+  ${/^https?:\/\//.test(agendaUrl || "") ? `<a href="${esc(agendaUrl)}" target="_blank" style="display:inline-block;margin:6px;background:#06180e;color:#fff;font:700 15px Arial;padding:13px 26px;border-radius:999px;text-decoration:none">View agenda</a>` : ""}
+  </div>
 </td></tr>
 <tr><td align="center" style="padding:0 32px 26px;font:12px Arial;color:#6b7f74">${esc(event.name || "")} ${esc(event.year || "")} &middot; ${esc(event.venue || "")}</td></tr>
 </table></td></tr></table></body></html>`;

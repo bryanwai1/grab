@@ -47,7 +47,7 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, department: p.department,
-        passUrl: passUrl(p.token), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
+        passUrl: passUrl(p.token), agendaUrl: window.location.origin + window.location.pathname + "#/agenda", logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
         subject: subject ? fillTemplate(subject, p) : undefined,
         message: message ? fillTemplate(message, p) : undefined,
         event: EVENT,
@@ -195,7 +195,7 @@ function Logo({ white, height = 30, style }) {
 }
 
 function Nav({ page, go }) {
-  const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["scores", "Live scores"], ["staff", "Staff"], ["admin", "Admin"]];
+  const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["agenda", "Agenda"], ["scores", "Live scores"], ["staff", "Staff"], ["admin", "Admin"]];
   const active = page === "checkin" || page === "gift" ? "staff" : page;
   return (
     <nav className="nav">
@@ -1758,6 +1758,46 @@ function Admin({ people, scores, totals, go, toast }) {
   );
 }
 
+/* ================= agenda ================= */
+
+const toMin = (t) => { const m = String(t).match(/(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : 0; };
+
+function Agenda({ go }) {
+  // Highlight the live slot only on event day.
+  const today = new Date();
+  const isDay = today.toDateString() === new Date(EVENT.dateLong.replace(/^\w+,\s*/, "")).toDateString();
+  const nowMin = today.getHours() * 60 + today.getMinutes();
+  let live = -1;
+  if (isDay) ITINERARY.forEach((it, i) => { if (toMin(it.time) <= nowMin) live = i; });
+  return (
+    <div className="shell section" style={{ maxWidth: 760 }}>
+      <div className="agenda-head">
+        <Badge height={96} />
+        <div>
+          <span className="eyebrow-pill"><span className="live-dot" /> {EVENT.dateLong}</span>
+          <h1 style={{ fontSize: 46, margin: "12px 0 6px" }}>Agenda</h1>
+          <p className="lede">{EVENT.venue} - doors open {EVENT.doorsOpen}</p>
+        </div>
+      </div>
+      <div className="panel" style={{ marginTop: 24 }}>
+        <div className="route" style={{ "--route-fill": live < 0 ? "0%" : Math.round(((live + 0.5) / ITINERARY.length) * 100) + "%" }}>
+          {ITINERARY.map((it, i) => (
+            <div key={i} className={"stop" + (i < live ? " stop-done" : i === live ? " stop-live" : "")}>
+              <div className="stop-time">{it.time}{i === live && <b className="agenda-now">Happening now</b>}</div>
+              <div className="stop-name">{it.name}</div>
+              <div className="stop-note">{it.note}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 }}>
+        <button className="btn" onClick={() => go("pass")}>My QR pass <span className="btn-arrow">&rarr;</span></button>
+        <button className="btn btn-ghost" onClick={() => go("scores")}>Live scores</button>
+      </div>
+    </div>
+  );
+}
+
 /* ================= root ================= */
 
 export default function App() {
@@ -1824,8 +1864,9 @@ export default function App() {
   if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} />{toastEl}</>;
 
   let body;
-  if (!loaded && page !== "home" && page !== "rsvp") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
+  if (!loaded && page !== "home" && page !== "rsvp" && page !== "agenda") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
   else if (page === "rsvp") body = <Rsvp go={go} />;
+  else if (page === "agenda") body = <Agenda go={go} />;
   else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
