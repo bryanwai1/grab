@@ -687,9 +687,9 @@ function StatusRow({ person }) {
       <span className={"status" + (person.checkedInAt ? " status-ok" : "")}>
         {person.checkedInAt ? "Checked in " + clock(person.checkedInAt) : "Not checked in"}
       </span>
-      <span className={"status" + (person.giftClaimedAt ? " status-gift" : "")}>
+      {EVENT.hasGift && <span className={"status" + (person.giftClaimedAt ? " status-gift" : "")}>
         {person.giftClaimedAt ? "Gift claimed " + clock(person.giftClaimedAt) : "Gift not claimed"}
-      </span>
+      </span>}
     </div>
   );
 }
@@ -732,7 +732,7 @@ function Pass({ arg, people, go, toast }) {
           <div className="kv"><span>Phone</span><span>{person.phone}</span></div>
           <div className="kv"><span>When</span><span>{EVENT.dateShort}, doors {EVENT.doorsOpen}</span></div>
 
-          <div className="gift-box">
+          {EVENT.hasGift && <div className="gift-box">
             <strong>{EVENT.gift}</strong>
             {person.giftClaimedAt ? (
               <div className="claimed-stamp">CLAIMED <span>{stamp(person.giftClaimedAt)}</span></div>
@@ -744,7 +744,7 @@ function Pass({ arg, people, go, toast }) {
             ) : (
               <p className="hint" style={{ marginTop: 6 }}>Unlocks after you check in at the lobby desk.</p>
             )}
-          </div>
+          </div>}
 
           <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button className="btn btn-ink btn-sm" onClick={() => downloadPass(person)}>Save pass image</button>
@@ -797,11 +797,11 @@ function StaffHome({ go, people }) {
           <span className="station-t">Lobby check-in</span>
           <span className="hint">Scan QR to mark arrival</span>
         </button>
-        <button className="station station-gift" onClick={() => go("gift")}>
+        {EVENT.hasGift && <button className="station station-gift" onClick={() => go("gift")}>
           <span className="station-n num">{gifts}<small>/{checked}</small></span>
           <span className="station-t">Gift counter</span>
           <span className="hint">Scan QR, slide to redeem once</span>
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -835,7 +835,7 @@ function ScanPopup({ person, kind, onClose }) {
   }, [onClose]);
   const h = houseOf(person.house);
   const msg = {
-    in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: "Next stop: the gift counter." },
+    in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: EVENT.hasGift ? "Next stop: the gift counter." : "Enjoy the day - go House " + h.name + "!" },
     again: { top: "Welcome back!", line: "You're already checked in at " + clock(person.checkedInAt) + ".", sub: "Thank you - enjoy the day." },
     gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go House " + h.name + "!" },
   }[kind];
@@ -883,7 +883,7 @@ function CheckInStation({ go, people }) {
         <PersonCard key={res.person.token + res.already} person={res.person} tone={res.already ? "warn" : "ok"}
           headline={res.already ? "Already checked in at " + clock(res.person.checkedInAt) : "Welcome! Checked in"}>
           <StatusRow person={res.person} />
-          <p className="hint" style={{ marginTop: 10 }}>Next stop: the gift counter.</p>
+          {EVENT.hasGift && <p className="hint" style={{ marginTop: 10 }}>Next stop: the gift counter.</p>}
         </PersonCard>
       )}
       {res && res.missing !== undefined && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {res.missing || "that code"}. Send the guest to the help desk.</div>}
@@ -1205,7 +1205,7 @@ function AdminLogin({ onOk }) {
   return (
     <div className="shell section" style={{ maxWidth: 440 }}>
       <h1 style={{ fontSize: 46, marginBottom: 10 }}>Admin</h1>
-      <p className="lede" style={{ marginBottom: 24 }}>Guest list, check-in and gift status, scoring.</p>
+      <p className="lede" style={{ marginBottom: 24 }}>Guest list, check-in, emails and scoring.</p>
       <form className="panel" onSubmit={submit}>
         <input className="input" type="password" value={pw} onChange={(e) => { setPw(e.target.value); setErr(""); }} placeholder="Admin password" autoFocus />
         {err && <p className="err" style={{ marginTop: 10 }}>{err}</p>}
@@ -1228,7 +1228,9 @@ function Overview({ people }) {
       <div className="kpis">
         <div className="kpi"><div className="num kpi-v"><Counter value={total} /></div><div className="kpi-l">RSVP'd</div></div>
         <div className="kpi"><div className="num kpi-v"><Counter value={checked} /></div><div className="kpi-l">Checked in <b>{pct(checked, total)}%</b></div></div>
-        <div className="kpi"><div className="num kpi-v"><Counter value={gifts} /></div><div className="kpi-l">Gifts claimed <b>{pct(gifts, checked)}%</b></div></div>
+        {EVENT.hasGift
+          ? <div className="kpi"><div className="num kpi-v"><Counter value={gifts} /></div><div className="kpi-l">Gifts claimed <b>{pct(gifts, checked)}%</b></div></div>
+          : <div className="kpi"><div className="num kpi-v"><Counter value={people.filter((p) => p.emailSentAt).length} /></div><div className="kpi-l">Emails sent <b>{pct(people.filter((p) => p.emailSentAt).length, total)}%</b></div></div>}
         <div className="kpi"><div className="num kpi-v"><Counter value={total - checked} /></div><div className="kpi-l">Yet to arrive</div></div>
       </div>
       <div className="split" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 20, marginTop: 20 }}>
@@ -1264,10 +1266,10 @@ function Overview({ people }) {
 }
 
 function exportCsv(rows) {
-  const head = ["Name", "Department", "Email", "Phone", "House", "Pass code", "RSVP at", "Checked in at", "Gift claimed at"];
+  const head = ["Name", "Department", "Email", "Phone", "House", "Pass code", "RSVP at", "Checked in at"].concat(EVENT.hasGift ? ["Gift claimed at"] : []);
   const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
   const lines = [head.map(q).join(",")].concat(rows.map((p) =>
-    [p.name, p.department, p.email, p.phone, houseOf(p.house).name, p.token, stamp(p.createdAt), stamp(p.checkedInAt), stamp(p.giftClaimedAt)].map(q).join(",")));
+    [p.name, p.department, p.email, p.phone, houseOf(p.house).name, p.token, stamp(p.createdAt), stamp(p.checkedInAt)].concat(EVENT.hasGift ? [stamp(p.giftClaimedAt)] : []).map(q).join(",")));
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -1338,14 +1340,14 @@ function Roster({ people, go, toast }) {
           <option value="">Any status</option>
           <option value="in">Checked in</option>
           <option value="out">Not arrived</option>
-          <option value="gift">Gift claimed</option>
-          <option value="nogift">In, gift pending</option>
+          {EVENT.hasGift && <option value="gift">Gift claimed</option>}
+          {EVENT.hasGift && <option value="nogift">In, gift pending</option>}
         </select>
         <button className="btn btn-ink btn-sm" onClick={() => exportCsv(rows)}>Export CSV ({rows.length})</button>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table className="grid">
-          <thead><tr><th>Name</th><th>Department</th><th>Contact</th><th>House</th><th>Pass</th><th>Check-in</th><th>Gift</th><th /></tr></thead>
+          <thead><tr><th>Name</th><th>Department</th><th>Contact</th><th>House</th><th>Pass</th><th>Check-in</th>{EVENT.hasGift && <th>Gift</th>}<th /></tr></thead>
           <tbody>
             {rows.map((p) => {
               const h = houseOf(p.house);
@@ -1357,13 +1359,13 @@ function Roster({ people, go, toast }) {
                   <td><span className="tag" style={{ background: h.hex + "22", color: h.hex }}><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span></td>
                   <td className="num" style={{ fontSize: 14 }}><button className="linkish" onClick={() => setQrFor(p)} title="Show QR">{p.token}</button></td>
                   <td>{p.checkedInAt ? <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>{clock(p.checkedInAt)}</span> : <span className="tag">Not yet</span>}</td>
-                  <td>{p.giftClaimedAt ? <span className="tag tag-gift">{clock(p.giftClaimedAt)}</span> : <span className="tag">-</span>}</td>
+                  {EVENT.hasGift && <td>{p.giftClaimedAt ? <span className="tag tag-gift">{clock(p.giftClaimedAt)}</span> : <span className="tag">-</span>}</td>}
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <button className="btn btn-ghost btn-xs" onClick={() => setQrFor(p)}>QR</button>
                     {p.checkedInAt
                       ? <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.updatePerson(p.id, { checkedInAt: null, giftClaimedAt: null }), "Check-in reset")}>Undo in</button>
                       : <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.checkIn(p.token), "Checked in")}>Check in</button>}
-                    {p.giftClaimedAt && <button className="btn btn-ghost btn-xs" onClick={() => window.confirm("Reset the gift claim for " + p.name + "?") && act(() => db.updatePerson(p.id, { giftClaimedAt: null }), "Gift reset")}>Reset gift</button>}
+                    {EVENT.hasGift && p.giftClaimedAt && <button className="btn btn-ghost btn-xs" onClick={() => window.confirm("Reset the gift claim for " + p.name + "?") && act(() => db.updatePerson(p.id, { giftClaimedAt: null }), "Gift reset")}>Reset gift</button>}
                     <button className="btn btn-ghost btn-xs btn-danger" onClick={() => window.confirm("Delete " + p.name + "'s RSVP?") && act(() => db.deletePerson(p.id), "Deleted")}>Delete</button>
                   </td>
                 </tr>
@@ -1396,7 +1398,9 @@ function PeopleIn({ people, go }) {
       <div className="kpis">
         <div className="kpi"><div className="num kpi-v"><Counter value={inn.length} /></div><div className="kpi-l">People in <b>{pct}%</b></div></div>
         <div className="kpi"><div className="num kpi-v"><Counter value={people.length - inn.length} /></div><div className="kpi-l">Yet to arrive</div></div>
-        <div className="kpi"><div className="num kpi-v"><Counter value={inn.filter((p) => p.giftClaimedAt).length} /></div><div className="kpi-l">Gifts claimed</div></div>
+        {EVENT.hasGift
+          ? <div className="kpi"><div className="num kpi-v"><Counter value={inn.filter((p) => p.giftClaimedAt).length} /></div><div className="kpi-l">Gifts claimed</div></div>
+          : <div className="kpi"><div className="num kpi-v"><Counter value={people.length} /></div><div className="kpi-l">RSVP'd</div></div>}
         <div className="kpi"><div className="num kpi-v">{inn.length ? clock(rows[0] ? rows[0].checkedInAt : inn[0].checkedInAt) : "-"}</div><div className="kpi-l">Latest arrival</div></div>
       </div>
       <div className="in-houses">
@@ -1425,7 +1429,7 @@ function PeopleIn({ people, go }) {
                 <span className="in-name"><b>{p.name}</b><small>{p.department} - House {h.name}</small></span>
                 <span className="num in-code">{p.token}</span>
                 <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>In {clock(p.checkedInAt)}</span>
-                {p.giftClaimedAt ? <span className="tag tag-gift">Gift {clock(p.giftClaimedAt)}</span> : <span className="tag">Gift pending</span>}
+                {EVENT.hasGift && (p.giftClaimedAt ? <span className="tag tag-gift">Gift {clock(p.giftClaimedAt)}</span> : <span className="tag">Gift pending</span>)}
               </li>
             );
           })}
@@ -1438,12 +1442,12 @@ function PeopleIn({ people, go }) {
 
 /* ---------------- email sender ---------------- */
 
-const TPL_KEY = "grab_email_tpl_v1";
+const TPL_KEY = "grab_email_tpl_v2";
 const TPL_PRESETS = {
   confirm: {
     label: "RSVP confirmation",
     subject: "You're in - {name}, see you at Hari Sukan (House {house})",
-    message: "Your RSVP for Grab MY Hari Sukan is confirmed. You're in House {house}.\n\nShow the QR below at the lobby desk on {date} to check in, then at the gift counter to collect your door gift (one per pass).\n\nSee you at {venue}!",
+    message: "Your RSVP for Grab MY Hari Sukan is confirmed. You're in House {house}.\n\nKeep the QR code screenshot on your phone and present it to the staff at the lobby registration counter on {date} to complete your check-in.\n\nSee you at {venue}!",
   },
   reminder: {
     label: "Event reminder",
@@ -1869,7 +1873,7 @@ export default function App() {
   else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
-  else if (page === "gift") body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
+  else if (page === "gift" && EVENT.hasGift) body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
   else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
 

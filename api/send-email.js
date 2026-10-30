@@ -6,7 +6,7 @@ const RESEND_KEY = process.env.RESEND_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL || "Grab MY Hari Sukan <rsvp@smartsolutionsevent.my>";
 
 const DEFAULT_MESSAGE =
-  "Your RSVP is confirmed. Show this QR at the lobby desk to check in, then at the gift counter to collect your door gift (one per pass).";
+  "Your RSVP is confirmed. Keep the QR code screenshot on your phone and present it to the staff at the lobby registration counter to complete your check-in.";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });

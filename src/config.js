@@ -8,6 +8,8 @@ export const EVENT = {
   venue: "Arena Sukan Kuala Lumpur (ASKL)",
   doorsOpen: "08:00",
   gift: "Door gift",
+  // No door gift this year: hides the gift counter, gift status and gift wording everywhere.
+  hasGift: false,
 };
 
 export const HOUSES = [
@@ -41,7 +43,7 @@ export const CHALLENGES = [
 export const RANK_POINTS = [4, 3, 2, 1];
 
 export const ITINERARY = [
-  { time: "08:00", name: "Doors open and check-in", note: "Scan your QR at the lobby desk, then collect your door gift." },
+  { time: "08:00", name: "Doors open and check-in", note: "Show your QR at the lobby registration counter to check in." },
   { time: "09:00", name: "Opening and house call", note: "Main Hall. All four houses assemble." },
   { time: "09:30", name: "Fitness Challenge", note: "Hall A, East Deck - waves 1 to 4." },
   { time: "11:15", name: "Obstacles", note: "Outdoor Field. Wet shoes guaranteed." },
