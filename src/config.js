@@ -15,6 +15,22 @@ export const EVENT = {
     "Comfortable sportswear",
     "Sports shoes for the activities",
   ],
+  // Shown in the confirmation email (design from Joanne).
+  eventTime: "8.00am - 4.00pm",
+  counterTime: "8.00am - 8.30am",
+  obstacleRemark: "For participants joining the Obstacle Challenge, it is recommended to wear **long pants** and bring **1 set of clean clothes**.",
+  parkingNote: "Parking space is limited. Carpool and Grab car is recommended.",
+  // Weekday parking rates only (event is on a Friday).
+  parkingRates: [
+    ["First 15 minutes", "Free"],
+    ["First 3 hours (6.01am - 7.00pm)", "RM3.00"],
+    ["Every subsequent hour and part thereof", "RM1.50"],
+    ["7.00pm - 6.01am (per entry)", "RM3.00"],
+  ],
+  storageNote: "We reserve a space for storage of bag, however the space is not locked. We highly recommend bringing your personal belongings with you. Any missing item we are not responsible for it.",
+  emailItinerary: [["8:00 AM", "Breakfast"], ["8:30 AM", "Registration Counter Close"], ["8:45 AM", "Gather at Lobby for March In"], ["9:00 AM", "Opening Ceremony Start"]],
+  bonus: "Teams with full attendance before **8:30 AM** will earn an additional",
+  bonusPoints: "300 points.",
   gift: "Door gift",
   // No door gift this year: hides the gift counter, gift status and gift wording everywhere.
   hasGift: false,

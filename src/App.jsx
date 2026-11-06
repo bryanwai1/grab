@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
+import { buildEmailHtml } from "./emailTemplate";
 import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN } from "./config";
 import * as db from "./store";
 
@@ -1460,12 +1461,12 @@ function PeopleIn({ people, go }) {
 
 /* ---------------- email sender ---------------- */
 
-const TPL_KEY = "grab_email_tpl_v2";
+const TPL_KEY = "grab_email_tpl_v3";
 const TPL_PRESETS = {
   confirm: {
     label: "RSVP confirmation",
     subject: "You're in - {name}, see you at Hari Sukan (House {house})",
-    message: "Your RSVP for Grab MY Hari Sukan is confirmed. You're in House {house}.\n\nKeep the QR code screenshot on your phone and present it to the staff at the lobby registration counter on {date} to complete your check-in.\n\nSee you at {venue}!",
+    message: "Your registration for Grab MY Hari Sukan 2026 is confirmed. You're in House **{house}**.",
   },
   reminder: {
     label: "Event reminder",
@@ -1485,26 +1486,15 @@ function loadTpl() {
 
 function EmailPreview({ person, subject, message }) {
   const h = houseOf(person.house);
-  const paras = fillTemplate(message, person).trim().split(/\n\s*\n/);
+  const html = buildEmailHtml({
+    name: person.name, token: person.token, house: h.name, houseHex: h.hex,
+    passUrl: passUrl(person.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + BADGE,
+    message: fillTemplate(message, person), event: EVENT,
+  });
   return (
     <div className="mail">
       <div className="mail-subject"><span>Subject</span>{fillTemplate(subject, person)}</div>
-      <div className="mail-card">
-        <div className="mail-head">
-          <img src={BADGE} alt="" height={96} />
-          <div className="mail-title">{EVENT.name.toUpperCase()} {EVENT.year}</div>
-        </div>
-        <div style={{ height: 8, background: h.hex }} />
-        <div className="mail-body">
-          <p>Hi <b>{person.name}</b>,</p>
-          {paras.map((t, i) => <p key={i} style={{ whiteSpace: "pre-line" }}>{t}</p>)}
-          <DressCode house={person.house} />
-          <div className="mail-qr">
-            <QrImg token={person.token} size={150} />
-            <div className="num" style={{ fontWeight: 800, letterSpacing: 2, marginTop: 6 }}>{person.token}</div>
-          </div>
-        </div>
-      </div>
+      <iframe className="mail-frame" title="Email preview" srcDoc={html} />
     </div>
   );
 }
