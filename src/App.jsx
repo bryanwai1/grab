@@ -1493,6 +1493,7 @@ function EmailPreview({ person, subject, message }) {
   });
   return (
     <div className="mail">
+      <div className="mail-subject"><span>From</span>Grab MY Hari Sukan &lt;events@smartsl-events.com&gt;</div>
       <div className="mail-subject"><span>Subject</span>{fillTemplate(subject, person)}</div>
       <iframe className="mail-frame" title="Email preview" srcDoc={html} />
     </div>

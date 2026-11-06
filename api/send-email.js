@@ -5,7 +5,8 @@
 import { buildEmailHtml } from "../src/emailTemplate.js";
 
 const RESEND_KEY = process.env.RESEND_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || "Grab MY Hari Sukan <rsvp@smartsolutionsevent.my>";
+// Sender on the verified domain used for Koerber (smartsl-events.com). FROM_EMAIL in Vercel overrides it.
+const FROM_EMAIL = (process.env.FROM_EMAIL || "").trim() || "Grab MY Hari Sukan <events@smartsl-events.com>";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
