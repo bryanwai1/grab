@@ -225,20 +225,45 @@ function Logo({ white, height = 30, style }) {
   return <img src={white ? LOGO_WHITE : LOGO} alt="Grab" height={height} style={{ height, width: "auto", display: "block", ...style }} />;
 }
 
+// Guests see only the logo. Staff reveal the menu by tapping the logo 5 times
+// (or automatically after entering the staff PIN / admin password).
+const isStaffMode = () => { try { return sessionStorage.getItem("grab_staff") === "1"; } catch (e) { return false; } };
+const setStaffMode = () => {
+  try { sessionStorage.setItem("grab_staff", "1"); } catch (e) { /* ignore */ }
+  window.dispatchEvent(new Event("grabStaffMode"));
+};
+let logoTaps = 0;
+let logoTimer = null;
+
 function Nav({ page, go }) {
+  const [staff, setStaff] = useState(isStaffMode);
+  useEffect(() => {
+    const h = () => setStaff(isStaffMode());
+    window.addEventListener("grabStaffMode", h);
+    return () => window.removeEventListener("grabStaffMode", h);
+  }, []);
+  const tapLogo = () => {
+    logoTaps += 1;
+    clearTimeout(logoTimer);
+    logoTimer = setTimeout(() => { logoTaps = 0; }, 2000);
+    if (logoTaps >= 5) { logoTaps = 0; setStaffMode(); }
+    go("home");
+  };
   const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["agenda", "Agenda"], ["scores", "Live scores"], ["staff", "Staff"], ["admin", "Admin"]];
   const active = page === "checkin" || page === "gift" ? "staff" : page;
   return (
     <nav className="nav">
       <div className="shell nav-in">
-        <button className="brand" onClick={() => go("home")}>
+        <button className="brand" onClick={tapLogo}>
           <Badge height={40} />
         </button>
-        <div className="nav-links">
-          {items.map(([k, label]) => (
-            <button key={k} className={"nav-link" + (k === "rsvp" ? " nav-cta" : "")} aria-current={active === k ? "page" : undefined} onClick={() => go(k)}>{label}</button>
-          ))}
-        </div>
+        {staff && (
+          <div className="nav-links">
+            {items.map(([k, label]) => (
+              <button key={k} className={"nav-link" + (k === "rsvp" ? " nav-cta" : "")} aria-current={active === k ? "page" : undefined} onClick={() => go(k)}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
     </nav>
   );
@@ -806,7 +831,7 @@ function PinGate({ children, title }) {
   const enter = (e) => {
     e.preventDefault();
     if (pin === STAFF_PIN || pin === ADMIN_PASSWORD) {
-      try { sessionStorage.setItem("grab_staff", "1"); } catch (x) { /* ignore */ }
+      setStaffMode();
       setOk(true);
     } else setErr("Wrong PIN.");
   };
@@ -1324,7 +1349,8 @@ function AdminLogin({ onOk }) {
   const submit = (e) => {
     e.preventDefault();
     if (pw === ADMIN_PASSWORD) {
-      try { sessionStorage.setItem("grab_admin", "1"); sessionStorage.setItem("grab_staff", "1"); } catch (x) { /* ignore */ }
+      try { sessionStorage.setItem("grab_admin", "1"); } catch (x) { /* ignore */ }
+      setStaffMode();
       onOk();
     } else setErr("Wrong password.");
   };
