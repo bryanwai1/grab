@@ -71,17 +71,45 @@ function fillTemplate(tpl, p) {
   return String(tpl || "").replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m));
 }
 // Sends one Grab-themed email with the person's QR pass. Returns { ok, error }.
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
+const TOKEN_RE = /^GRB-[A-Z0-9]{6}$/;
+// Problems that would put wrong info in an email. Empty list = safe to send.
+function emailProblems(p, to, subject, message) {
+  const out = [];
+  if (!p || !String(p.name || "").trim()) out.push("name is missing");
+  if (!EMAIL_RE.test(String(to || "").trim())) out.push("email address looks wrong (" + (to || "empty") + ")");
+  if (!p || !HOUSES.some((h) => h.key === p.house)) out.push("house is missing or unknown");
+  if (!p || !TOKEN_RE.test(String(p.token || ""))) out.push("pass code is invalid");
+  const left = (String(subject || "") + " " + String(message || "")).match(/\{\w+\}/g);
+  if (left) out.push("template has unfilled fields " + Array.from(new Set(left)).join(" "));
+  return out;
+}
+
+// Before every send: re-read the guest from the database and send ONLY what
+// is stored there, so a stale list or a mix-up can never put someone else's
+// name, house or QR in the email. Test sends (to = override) skip the lookup.
 async function sendPassEmail(p, { subject, message, to } = {}) {
-  const h = houseOf(p.house);
+  let person = p;
+  if (!to) {
+    let fresh = null;
+    try { fresh = await db.findByToken(p.token); } catch (e) { return { ok: false, error: "Couldn't verify with the database - not sent" }; }
+    if (!fresh || fresh.id !== p.id) return { ok: false, error: "Pass code doesn't match the database record - not sent" };
+    if (String(fresh.email).toLowerCase() !== String(p.email).toLowerCase() || fresh.name !== p.name || fresh.house !== p.house)
+      return { ok: false, error: "Details changed since the list loaded - refresh and send again" };
+    person = fresh;
+  }
+  const subj = subject ? fillTemplate(subject, person) : undefined;
+  const msg = message ? fillTemplate(message, person) : undefined;
+  const bad = emailProblems(person, to || person.email, subj, msg);
+  if (bad.length) return { ok: false, error: "Not sent: " + bad.join("; ") };
+  const h = houseOf(person.house);
   try {
     const r = await fetch("/api/send-email", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: p.department,
-        passUrl: passUrl(p.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
-        subject: subject ? fillTemplate(subject, p) : undefined,
-        message: message ? fillTemplate(message, p) : undefined,
-        event: EVENT,
+        to: (to || person.email).trim(), name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
+        passUrl: passUrl(person.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
+        subject: subj, message: msg, event: EVENT,
       }),
     });
     const d = await r.json().catch(() => ({}));
@@ -759,9 +787,26 @@ function StatusRow({ person }) {
 
 function Pass({ arg, people, go, toast }) {
   const [token, flag] = arg.split("~");
-  const person = people.find((p) => p.token === db.normToken(token));
+  const want = db.normToken(token);
+  const inList = people.find((p) => p.token === want);
+  // Not in this device's list yet (slow phone, list still loading, just
+  // registered): ask the database directly before saying "not found".
+  const [direct, setDirect] = useState({ state: "idle", person: null });
+  useEffect(() => {
+    if (!want || inList) return undefined;
+    let alive = true;
+    setDirect({ state: "loading", person: null });
+    const tryOnce = (n) => db.findByToken(want)
+      .then((p) => { if (alive) setDirect({ state: p ? "found" : "missing", person: p }); })
+      .catch(() => { if (!alive) return; if (n < 3) setTimeout(() => tryOnce(n + 1), 1500); else setDirect({ state: "error", person: null }); });
+    tryOnce(1);
+    return () => { alive = false; };
+  }, [want, inList]);
+  const person = inList || direct.person;
   if (!token) return <FindPass go={go} />;
-  if (!person) return <FindPass go={go} note="That pass code was not found." />;
+  if (!person && (direct.state === "loading" || direct.state === "idle")) return <div className="shell section"><p className="lede">Loading your pass...</p></div>;
+  if (!person && direct.state === "error") return <FindPass go={go} note="Connection problem - check your internet and try again." />;
+  if (!person) return <FindPass go={go} note={"Pass code " + want + " was not found. Use your RSVP email below."} />;
   const h = houseOf(person.house);
 
   const claim = async () => {
@@ -901,13 +946,14 @@ function ScanPopup({ person, kind, onClose }) {
   const h = houseOf(person.house);
   const msg = {
     in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: EVENT.hasGift ? "Next stop: the gift counter." : "Enjoy the day - go " + h.name + "!" },
-    again: { top: "Welcome back!", line: "You're already checked in at " + clock(person.checkedInAt) + ".", sub: "Thank you - enjoy the day." },
+    again: { top: "Already checked in", line: "You checked in at " + clock(person.checkedInAt) + ". No need to scan again.", sub: "Enjoy the day - go " + h.name + "!" },
     gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go " + h.name + "!" },
   }[kind];
   return (
     <div className="pop-back" onClick={onClose} role="dialog" aria-live="assertive">
-      <div className="pop" style={{ "--h": h.hex }} onClick={onClose}>
-        <Particles className="pop-fx" density={26} confetti />
+      <div className={"pop" + (kind === "again" ? " pop-again" : "")} style={{ "--h": h.hex }} onClick={onClose}>
+        {kind !== "again" && <Particles className="pop-fx" density={26} confetti />}
+        {kind === "again" && <div className="pop-tick" aria-hidden="true">&#10003;</div>}
         <div className="pop-top">{msg.top}</div>
         <div className="pop-name">{person.name}</div>
         <div className="pop-team"><span className="chip-dot" style={{ background: "#fff" }} />House {h.name} &middot; {person.department}</div>
@@ -928,6 +974,8 @@ function CheckInStation({ go, people }) {
     setBusy(true);
     try {
       const r = await db.checkIn(raw);
+      // Show only the record that exactly matches the scanned pass code.
+      if (r.person && r.person.token !== db.normToken(raw)) { setRes({ error: true }); beep(false); return; }
       setRes(r.person ? r : { missing: db.normToken(raw) });
       if (r.person) setPop({ person: r.person, kind: r.already ? "again" : "in", id: Date.now() });
       if (!r.person || r.already) beep(false);
@@ -946,8 +994,9 @@ function CheckInStation({ go, people }) {
       <Scanner onCode={onCode} busy={busy} people={people} />
       {res && res.person && (
         <PersonCard key={res.person.token + res.already} person={res.person} tone={res.already ? "warn" : "ok"}
-          headline={res.already ? "Already checked in at " + clock(res.person.checkedInAt) : "Welcome! Checked in"}>
+          headline={res.already ? "Already checked in at " + clock(res.person.checkedInAt) + " - not counted again" : "Welcome! Checked in"}>
           <StatusRow person={res.person} />
+          {res.queued && <p className="hint" style={{ marginTop: 10 }}>Wi-Fi is down: saved on this device and will sync automatically.</p>}
           {EVENT.hasGift && <p className="hint" style={{ marginTop: 10 }}>Next stop: the gift counter.</p>}
         </PersonCard>
       )}
@@ -1673,7 +1722,17 @@ function EmailCenter({ people, toast }) {
   const sendAll = async () => {
     const list = recipients.slice();
     if (!list.length) return;
-    if (!window.confirm("Send this email to " + list.length + " " + (list.length === 1 ? "person" : "people") + "?")) return;
+    // Pre-flight: check every record before anything is sent.
+    const seen = {};
+    list.forEach((p) => { const e = String(p.email || "").toLowerCase(); seen[e] = (seen[e] || 0) + 1; });
+    const issues = [];
+    list.forEach((p) => {
+      const bad = emailProblems(p, p.email, fillTemplate(tpl.subject, p), fillTemplate(tpl.message, p));
+      if (seen[String(p.email || "").toLowerCase()] > 1) bad.push("email shared with another guest");
+      if (bad.length) issues.push((p.name || "(no name)") + ": " + bad.join("; "));
+    });
+    const warn = issues.length ? "\n\nCheck before sending - " + issues.length + " problem(s), these will NOT be sent:\n" + issues.slice(0, 12).join("\n") + (issues.length > 12 ? "\n..." : "") : "\n\nAll " + list.length + " records checked: names, emails, houses and pass codes look correct.";
+    if (!window.confirm("Send this email to " + list.length + " " + (list.length === 1 ? "person" : "people") + "?" + warn)) return;
     stopRef.current = false;
     let ok = 0, fail = 0;
     const errors = [];
@@ -1880,7 +1939,180 @@ function Ledger({ scores, toast }) {
   );
 }
 
-function Admin({ people, scores, totals, go, toast }) {
+/* ================= system status, backup & export ================= */
+
+function SystemStatus({ health }) {
+  const [staff, setStaff] = useState(isStaffMode);
+  useEffect(() => {
+    const h = () => setStaff(isStaffMode());
+    window.addEventListener("grabStaffMode", h);
+    return () => window.removeEventListener("grabStaffMode", h);
+  }, []);
+  if (!staff || !health.checkedAt) return null;
+  const bad = !health.ok;
+  return (
+    <div className={"sys-bar" + (bad ? " sys-bad" : "")} role="status">
+      <span className="sys-dot" />
+      {bad
+        ? <span><b>Offline</b> - last good sync {clock(health.lastOk) || "-"}. Scans are being saved on this device and will sync automatically.</span>
+        : <span><b>System OK</b> - checked {clockSec(health.checkedAt)} ({health.ms} ms){db.MODE === "demo" ? " - demo mode" : ""}</span>}
+      {health.pending > 0 && <span className="sys-pend">{health.pending} check-in{health.pending > 1 ? "s" : ""} waiting to sync</span>}
+      {health.lastBackup && <span className="sys-bk">Backup {clockSec(health.lastBackup)}</span>}
+    </div>
+  );
+}
+
+const clockSec = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
+const myStamp = (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
+const fileDate = () => new Date().toISOString().slice(0, 16).replace(/[T:]/g, "-");
+
+function saveBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// Results per challenge: [{ c, rows: [{ rank, h, v, pts }] }]
+function challengeResults(totals) {
+  return CHALLENGES.map((c) => {
+    const rows = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
+      .filter((r) => scored(c, r.v))
+      .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
+      .map((r, i) => ({ ...r, rank: i + 1, pts: ptsFor(c)[i] || 0 }));
+    return { c, rows };
+  });
+}
+
+async function exportExcel({ people, scores, totals, standings, bonus, winnersOnly }) {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const add = (name, rows, widths) => {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    if (widths) ws["!cols"] = widths.map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+  const [bh, bm] = EARLY_BONUS.before.split(":").map(Number);
+  const cut = bh * 60 + bm;
+  const cup = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
+  const inCount = people.filter((p) => p.checkedInAt).length;
+
+  // Winners / standings
+  const head = ["Rank", "House", "Colour"].concat(CHALLENGES.map((c) => c.name), ["Early sign-in bonus", "TOTAL"]);
+  const cupRows = cup.map((r, i) => [i + 1, r.h.name, r.h.colour].concat(CHALLENGES.map((c) => r.s.per[c.key] || 0), [r.s.per.bonus || 0, r.s.total]));
+  add("Winners", [
+    [EVENT.name + " - results"], ["Exported", myStamp(new Date().toISOString()) + " (MYT)"],
+    ["House Cup champion", cup[0] && cup[0].s.total > 0 ? cup[0].h.name + " (" + cup[0].h.colour + ") - " + cup[0].s.total + " pts" : "No points yet"],
+    ["RSVP'd", people.length], ["Checked in", inCount], ["Not checked in", people.length - inCount],
+    [], ["HOUSE CUP STANDINGS"], head,
+  ].concat(cupRows), [8, 16, 10].concat(CHALLENGES.map(() => 16), [18, 10]));
+
+  // Per challenge
+  const res = [["Challenge", "Rank", "House", "Colour", "Result", "Points awarded"]];
+  challengeResults(totals).forEach(({ c, rows }) => {
+    if (!rows.length) res.push([c.name, "", "No result yet", "", "", ""]);
+    rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v), r.pts]));
+  });
+  HOUSES.forEach((h) => res.push([EARLY_BONUS.label + " (all in before " + EARLY_BONUS.before + ")", "", h.name, h.colour,
+    bonus[h.key].inTime + " / " + bonus[h.key].team + " in time", bonus[h.key].earned ? EARLY_BONUS.points : 0]));
+  add("Challenge results", res, [34, 6, 14, 10, 22, 14]);
+
+  if (!winnersOnly) {
+    const ph = ["Name", "Department", "Email", "Phone", "House", "Colour", "Pass code", "RSVP at (MYT)", "Checked in", "Check-in time (MYT)", "Before " + EARLY_BONUS.before];
+    if (EVENT.hasGift) ph.push("Gift claimed (MYT)");
+    ph.push("Pass email sent (MYT)");
+    const row = (p) => {
+      const h = houseOf(p.house);
+      const r = [p.name, p.department, p.email, p.phone, h.name, h.colour, p.token, myStamp(p.createdAt),
+        p.checkedInAt ? "Yes" : "No", myStamp(p.checkedInAt), p.checkedInAt ? (myMinutes(p.checkedInAt) < cut ? "Yes" : "No") : ""];
+      if (EVENT.hasGift) r.push(myStamp(p.giftClaimedAt));
+      r.push(myStamp(p.emailSentAt));
+      return r;
+    };
+    const w = [28, 18, 30, 16, 12, 9, 12, 22, 10, 22, 10, 22];
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const checked = people.filter((p) => p.checkedInAt).sort((a, b) => a.checkedInAt.localeCompare(b.checkedInAt));
+    add("Checked in", [ph].concat(checked.map(row)), w);
+    add("Not checked in", [ph].concat(people.filter((p) => !p.checkedInAt).sort(byName).map(row)), w);
+    add("All attendees", [ph].concat(people.slice().sort(byName).map(row)), w);
+    const byHouse = [["House", "Colour", "RSVP'd", "Checked in", "In before " + EARLY_BONUS.before, "Bonus earned"]];
+    HOUSES.forEach((h) => {
+      const team = people.filter((p) => p.house === h.key);
+      byHouse.push([h.name, h.colour, team.length, team.filter((p) => p.checkedInAt).length, bonus[h.key].inTime, bonus[h.key].earned ? "Yes" : "No"]);
+    });
+    add("By house", byHouse, [14, 10, 10, 12, 16, 12]);
+    add("Score log", [["Time (MYT)", "Challenge", "House", "Value", "Note", "Entered by"]].concat(
+      scores.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map((sc) => {
+        const c = challengeOf(sc.challenge);
+        return [myStamp(sc.createdAt), c.name, houseOf(sc.house).name, showValue(c, sc.points), sc.note, sc.by];
+      })), [22, 22, 12, 12, 30, 16]);
+  }
+  XLSX.writeFile(wb, (winnersOnly ? "hari-sukan-winners-" : "hari-sukan-full-report-") + fileDate() + ".xlsx");
+}
+
+function downloadJson(data, name) {
+  saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), name);
+}
+
+function BackupPanel({ people, scores, totals, standings, bonus, health, toast }) {
+  const [busy, setBusy] = useState("");
+  const [backups, setBackups] = useState(db.listBackups);
+  useEffect(() => { setBackups(db.listBackups()); }, [health.lastBackup]);
+  const run = async (key, fn) => {
+    setBusy(key);
+    try { await fn(); toast("Downloaded"); } catch (e) { toast("Export failed - try again", "bad"); }
+    finally { setBusy(""); }
+  };
+  const data = { people, scores, totals, standings, bonus };
+  const full = () => ({ exportedAt: new Date().toISOString(), event: EVENT.name, mode: db.MODE, people, scores });
+  const cup = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
+  return (
+    <div className="bk-stack">
+      <div className="panel">
+        <h3>System health</h3>
+        <p className="hint" style={{ marginTop: 6 }}>The system checks itself every 30 seconds: it pings the database, syncs any check-ins saved while offline, reloads the data and keeps a backup copy on this device.</p>
+        <div className="bk-grid">
+          <div><span>Database</span><b className={health.ok ? "ok-txt" : "bad-txt"}>{health.ok ? "Online" : "Offline"}</b></div>
+          <div><span>Last check</span><b>{clockSec(health.checkedAt) || "-"}</b></div>
+          <div><span>Response</span><b>{health.ms} ms</b></div>
+          <div><span>Waiting to sync</span><b>{health.pending}</b></div>
+          <div><span>Last backup</span><b>{clockSec(health.lastBackup) || "-"}</b></div>
+          <div><span>Records</span><b>{people.length} guests / {scores.length} scores</b></div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Download for after the event</h3>
+        <p className="hint" style={{ marginTop: 6 }}>Excel file with sheets: Winners, Challenge results, Checked in, Not checked in, All attendees, By house and Score log. Times are Malaysia time.</p>
+        <div className="bk-btns">
+          <button className="btn btn-ink" disabled={!!busy} onClick={() => run("x", () => exportExcel(data))}>{busy === "x" ? "Preparing..." : "Download full Excel report"}</button>
+          <button className="btn" disabled={!!busy} onClick={() => run("w", () => exportExcel({ ...data, winnersOnly: true }))}>{busy === "w" ? "Preparing..." : "Download winners only (Excel)"}</button>
+          <button className="btn btn-ghost" disabled={!!busy} onClick={() => run("j", () => downloadJson(full(), "hari-sukan-backup-" + fileDate() + ".json"))}>Download full backup (.json)</button>
+        </div>
+        <p className="hint" style={{ marginTop: 10 }}>Current leader: {cup[0].s.total > 0 ? cup[0].h.name + " - " + cup[0].s.total + " pts" : "no points yet"}</p>
+      </div>
+
+      <div className="panel">
+        <h3>Backups saved on this device</h3>
+        <p className="hint" style={{ marginTop: 6 }}>Saved automatically every 30 seconds (latest {backups.length}). If the database ever goes down, download one of these.</p>
+        {backups.length === 0 && <p className="hint">No backups yet - the first one is saved within 30 seconds.</p>}
+        <div className="bk-list">
+          {backups.map((b) => (
+            <div key={b.at} className="bk-row">
+              <span>{myStamp(b.at)}</span>
+              <span className="hint">{b.people.length} guests - {b.people.filter((p) => p.checkedInAt).length} in - {b.scores.length} scores</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => downloadJson({ ...b, event: EVENT.name }, "hari-sukan-backup-" + b.at.slice(0, 19).replace(/[T:]/g, "-") + ".json")}>Download</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Admin({ people, scores, totals, standings, bonus, health, go, toast }) {
   const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_admin") === "1"; } catch (e) { return false; } });
   const [tab, setTab] = useState("overview");
   if (!ok) return <AdminLogin onOk={() => setOk(true)} />;
@@ -1895,7 +2127,7 @@ function Admin({ people, scores, totals, go, toast }) {
         <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
       </div>
       <div className="tabs" role="tablist">
-        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["ledger", "Score ledger"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["ledger", "Score ledger"], ["backup", "Backup & export"]].map(([k, label]) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -1905,6 +2137,7 @@ function Admin({ people, scores, totals, go, toast }) {
       {tab === "email" && <EmailCenter people={people} toast={toast} />}
       {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
       {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
+      {tab === "backup" && <BackupPanel people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} toast={toast} />}
     </div>
   );
 }
@@ -1967,11 +2200,43 @@ export default function App() {
   const [loadErr, setLoadErr] = useState("");
   const [toastMsg, setToastMsg] = useState(null);
 
+  const [health, setHealth] = useState({ ok: true, checkedAt: null, lastOk: null, ms: 0, pending: db.pendingCount(), lastBackup: null });
+  const latest = useRef({ people: [], scores: [] });
+
   const refresh = useCallback(() => {
     db.loadAll()
-      .then((d) => { setPeople(d.people); setScores(d.scores); setLoaded(true); setLoadErr(""); })
+      .then((d) => {
+        setPeople(d.people); setScores(d.scores); setLoaded(true); setLoadErr("");
+        latest.current = d;
+        if (isStaffMode()) db.saveSnapshot(d.people, d.scores); // offline copy for the scanners
+      })
       .catch(() => setLoadErr("Can't reach the database. Retrying..."));
   }, []);
+
+  // Self-check every 30 seconds: ping the database, push any check-ins that
+  // were saved offline, reload, and keep a rolling backup on staff devices.
+  useEffect(() => {
+    let alive = true;
+    const run = async () => {
+      const synced = await db.flushPending().catch(() => 0);
+      const h = await db.healthCheck();
+      if (!alive) return;
+      if (h.ok) refresh();
+      let lastBackup = null;
+      if (h.ok && isStaffMode() && latest.current.people.length) {
+        lastBackup = db.saveSnapshot(latest.current.people, latest.current.scores, { rolling: true }).at;
+      }
+      setHealth((old) => ({
+        ok: h.ok, ms: h.ms, checkedAt: new Date().toISOString(),
+        lastOk: h.ok ? new Date().toISOString() : old.lastOk,
+        pending: db.pendingCount(), synced,
+        lastBackup: lastBackup || old.lastBackup,
+      }));
+    };
+    const first = setTimeout(run, 4000); // first check once data has loaded
+    const t = setInterval(run, 30000);
+    return () => { alive = false; clearTimeout(first); clearInterval(t); };
+  }, [refresh]);
 
   useEffect(() => {
     refresh();
@@ -2031,19 +2296,23 @@ export default function App() {
   if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} tv={route.extra === "tv"} />{toastEl}</>;
 
   let body;
-  if (!loaded && page !== "home" && page !== "rsvp" && page !== "agenda") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
+  if (!loaded && page !== "home" && page !== "rsvp" && page !== "agenda" && page !== "pass") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
   else if (page === "rsvp") body = <Rsvp go={go} />;
   else if (page === "agenda") body = <Agenda go={go} />;
   else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
   else if (page === "gift" && EVENT.hasGift) body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
-  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} go={go} toast={toast} />;
+  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
 
   return (
     <>
       <Nav page={page} go={go} />
+      <SystemStatus health={health} />
+      {db.MODE === "demo" && window.location.hostname !== "localhost" && isStaffMode() && (
+        <div className="banner banner-bad" style={{ borderRadius: 0, margin: 0 }}>DEMO MODE: the database is not connected, so each phone/laptop only sees its own data. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in Vercel and redeploy.</div>
+      )}
       {page !== "home" && <Ticker totals={totals} go={go} />}
       {loadErr && loaded && <div className="banner banner-bad" style={{ borderRadius: 0, margin: 0 }}>{loadErr}</div>}
       {body}

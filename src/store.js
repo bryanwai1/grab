@@ -161,22 +161,117 @@ export async function register({ name, department, email, phone, house }) {
 }
 
 // Returns { person, already } or { person: null } when the code is unknown.
+// A pass can only ever be checked in once: the update only applies while
+// checked_in_at is still empty, so two scanners firing together cannot
+// double-check-in or overwrite the first time.
+// If the network is down, the check-in is saved on this device (queued: true)
+// and synced automatically by flushPending().
 export async function checkIn(token) {
-  const p = await findByToken(token);
-  if (!p) return { person: null };
-  if (p.checkedInAt) return { person: p, already: true };
-  if (!supa) {
-    const db = readDb();
-    const row = db.people.find((x) => x.id === p.id);
-    row.checkedInAt = now();
-    writeDb(db);
-    return { person: { ...row }, already: false };
+  const t = normToken(token);
+  try {
+    const p = await findByToken(t);
+    if (!p) return { person: null };
+    if (p.checkedInAt) return { person: p, already: true };
+    if (!supa) {
+      const db = readDb();
+      const row = db.people.find((x) => x.id === p.id);
+      row.checkedInAt = now();
+      writeDb(db);
+      return { person: { ...row }, already: false };
+    }
+    const { data, error } = await supa.from("grab_people").update({ checked_in_at: now() })
+      .eq("id", p.id).is("checked_in_at", null).select();
+    if (error) throw error;
+    if (!data.length) return { person: await findByToken(t), already: true };
+    return { person: toPerson(data[0]), already: false };
+  } catch (e) {
+    if (!supa) throw e;
+    // Offline: use this device's last snapshot so the door keeps moving.
+    const snap = readSnapshot();
+    const p = snap && snap.people.find((x) => x.token === t);
+    if (!p) throw e;
+    const q = readPending();
+    const queued = q.find((x) => x.kind === "checkin" && x.token === t);
+    if (p.checkedInAt) return { person: p, already: true };
+    if (queued) return { person: { ...p, checkedInAt: queued.at }, already: true, queued: true };
+    const at = now();
+    q.push({ kind: "checkin", token: t, id: p.id, at });
+    writePending(q);
+    return { person: { ...p, checkedInAt: at }, already: false, queued: true };
   }
-  const { data, error } = await supa.from("grab_people").update({ checked_in_at: now() })
-    .eq("id", p.id).is("checked_in_at", null).select();
-  if (error) throw error;
-  if (!data.length) return { person: await findByToken(token), already: true };
-  return { person: toPerson(data[0]), already: false };
+}
+
+/* ---------------- offline queue, snapshots, health ---------------- */
+
+const PENDING_KEY = "grab_pending_v1";
+const SNAP_KEY = "grab_snapshot_v1";
+const BACKUPS_KEY = "grab_backups_v1";
+const MAX_BACKUPS = 12;
+
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch (e) { return []; }
+}
+function writePending(q) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(q)); } catch (e) { /* ignore */ }
+}
+export const pendingCount = () => readPending().length;
+
+// Push check-ins that were saved while offline. Keeps the original scan time
+// and never overwrites a check-in that already exists.
+export async function flushPending() {
+  if (!supa) return 0;
+  const q = readPending();
+  if (!q.length) return 0;
+  const left = [];
+  for (const item of q) {
+    try {
+      if (item.kind === "checkin") {
+        const { error } = await supa.from("grab_people").update({ checked_in_at: item.at })
+          .eq("id", item.id).is("checked_in_at", null);
+        if (error) throw error;
+      }
+    } catch (e) { left.push(item); }
+  }
+  writePending(left);
+  return q.length - left.length;
+}
+
+function readSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAP_KEY) || "null"); } catch (e) { return null; }
+}
+
+// Called with fresh data: keeps the latest copy (used offline) and a rolling
+// set of timestamped backups on this device.
+export function saveSnapshot(people, scores, { rolling } = {}) {
+  const snap = { at: now(), mode: MODE, people, scores };
+  try { localStorage.setItem(SNAP_KEY, JSON.stringify(snap)); } catch (e) { /* ignore */ }
+  if (!rolling) return snap;
+  try {
+    const list = JSON.parse(localStorage.getItem(BACKUPS_KEY) || "[]");
+    list.unshift(snap);
+    let keep = list.slice(0, MAX_BACKUPS);
+    // If storage is full, drop the oldest until it fits.
+    while (keep.length) {
+      try { localStorage.setItem(BACKUPS_KEY, JSON.stringify(keep)); break; } catch (e) { keep = keep.slice(0, -1); }
+    }
+  } catch (e) { /* ignore */ }
+  return snap;
+}
+export function listBackups() {
+  try { return JSON.parse(localStorage.getItem(BACKUPS_KEY) || "[]"); } catch (e) { return []; }
+}
+
+// Quick round trip to the database. { ok, ms }
+export async function healthCheck() {
+  const t0 = Date.now();
+  if (!supa) return { ok: true, ms: 0 };
+  try {
+    const { error } = await supa.from("grab_people").select("id", { head: true, count: "exact" }).limit(1);
+    if (error) throw error;
+    return { ok: true, ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e) };
+  }
 }
 
 // One-time door gift. The conditional update makes it safe even if two
