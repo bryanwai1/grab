@@ -695,6 +695,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .house-opt:hover { transform: translateY(-3px); border-color: var(--h); }
 .house-opt[aria-pressed="true"] { border-color: var(--h); box-shadow: 0 0 0 4px color-mix(in srgb, var(--h) 22%, transparent); transform: translateY(-3px); }
 .house-swatch { width: 42px; height: 42px; border-radius: 50%; background: var(--h); box-shadow: inset 0 -6px 0 rgba(0,0,0,.14); transition: transform .3s var(--bounce); }
+.house-col { margin-top: -6px; font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .5px; text-transform: uppercase; }
 .house-opt[aria-pressed="true"] .house-swatch { transform: scale(1.12); }
 
 .banner { padding: 14px 18px; border-radius: var(--r-sm); background: var(--paper); border: 1px solid var(--line); margin-bottom: 18px; font-weight: 600; position: relative; overflow: hidden; animation: pop .5s var(--bounce) both; }
@@ -789,7 +790,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .focus-meta { color: rgba(255,255,255,.85); font-size: clamp(16px, 2.2vw, 20px); line-height: 1.5; }
 .focus-cta { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; width: 100%; max-width: 380px; }
 .btn-xl { font-size: 20px; min-height: 64px; }
-.focus-houses { display: grid; grid-template-columns: repeat(4, 76px); gap: 8px; margin-top: 30px; justify-content: center; }
+.focus-houses { display: grid; grid-template-columns: repeat(4, 92px); gap: 8px; margin-top: 30px; justify-content: center; }
 .focus-house { color: #fff; font-weight: 700; font-size: 13px; padding: 6px 0; text-align: center; border-radius: 999px; }
 .focus-count { color: rgba(255,255,255,.7); margin-top: 18px; font-size: 14.5px; }
 .focus-count .num { color: #fff; font-size: 17px; }

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { buildEmailHtml } from "./emailTemplate";
-import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN } from "./config";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN } from "./config";
 import * as db from "./store";
 
 /* ================= helpers ================= */
@@ -23,7 +23,27 @@ function parseTime(str) {
   return m * 6000 + sec * 100 + c;
 }
 
-const showValue = (ch, v) => (ch.type === "time" ? fmtTime(v) : String(v));
+const showValue = (ch, v) => (ch.type === "time" ? fmtTime(v) : ch.type === "winner" ? (v > 0 ? "Winner" : "-") : String(v));
+const scored = (ch, v) => (ch.type === "time" ? isFinite(v) : v > 0);
+const ptsFor = (ch) => ch.points || RANK_POINTS;
+// Time of day in Malaysia, as minutes after midnight.
+const myMinutes = (iso) => {
+  const t = new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+// Early sign-in bonus: every RSVP'd member of the house checked in before EARLY_BONUS.before.
+function earlyBonus(people) {
+  const [bh, bm] = EARLY_BONUS.before.split(":").map(Number);
+  const cut = bh * 60 + bm;
+  const out = {};
+  HOUSES.forEach((h) => {
+    const team = people.filter((p) => p.house === h.key);
+    const inTime = team.filter((p) => p.checkedInAt && myMinutes(p.checkedInAt) < cut).length;
+    out[h.key] = { team: team.length, inTime, earned: team.length > 0 && inTime === team.length };
+  });
+  return out;
+}
 const houseOf = (k) => HOUSES.find((h) => h.key === k) || HOUSES[0];
 const challengeOf = (k) => CHALLENGES.find((c) => c.key === k) || CHALLENGES[0];
 const BG = (n) => ({ backgroundImage: "url(" + (process.env.PUBLIC_URL || "") + "/" + n + ")" });
@@ -36,7 +56,7 @@ function DressCode({ house }) {
   return (
     <div className="dress" style={h ? { "--h": h.hex } : null}>
       <div className="dress-t">Dress code</div>
-      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", "House " + h.name + " colour") : d}</li>)}</ul>
+      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", h.colour.toLowerCase() + " (" + h.name + ")") : d}</li>)}</ul>
     </div>
   );
 }
@@ -44,9 +64,9 @@ const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURICo
 const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
 
 // Template placeholders the admin can use in the email subject and message.
-const EMAIL_FIELDS = ["name", "house", "department", "code", "date", "venue", "address", "doors", "link"];
+const EMAIL_FIELDS = ["name", "house", "colour", "department", "code", "date", "venue", "address", "doors", "link"];
 function fillTemplate(tpl, p) {
-  const v = { name: p.name, house: houseOf(p.house).name, department: p.department, code: p.token,
+  const v = { name: p.name, house: houseOf(p.house).name, colour: houseOf(p.house).colour, department: p.department, code: p.token,
     date: EVENT.dateLong, venue: EVENT.venue, address: EVENT.address, doors: EVENT.doorsOpen, link: passUrl(p.token) };
   return String(tpl || "").replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m));
 }
@@ -57,7 +77,7 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
     const r = await fetch("/api/send-email", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, department: p.department,
+        to: to || p.email, name: p.name, token: p.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: p.department,
         passUrl: passUrl(p.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
         subject: subject ? fillTemplate(subject, p) : undefined,
         message: message ? fillTemplate(message, p) : undefined,
@@ -244,10 +264,11 @@ function Ticker({ totals, go }) {
           {CHALLENGES.map((c) => {
             const lead = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
               .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))[0];
+            if (!scored(c, lead.v)) return null;
             return (
               <button key={c.key} className="ticker-chip" onClick={() => go("scores")}>
                 <span className="chip-dot" style={{ background: lead.h.hex }} />
-                {c.name.split(" ")[0]} {lead.h.name} {showValue(c, lead.v)}
+                {c.short} {lead.h.name} {showValue(c, lead.v)}
               </button>
             );
           })}
@@ -642,7 +663,7 @@ function Rsvp({ go }) {
             {HOUSES.map((h) => (
               <button type="button" key={h.key} className="house-opt" aria-pressed={f.house === h.key}
                 style={{ "--h": h.hex }} onClick={() => set("house")(h.key)}>
-                <span className="house-swatch" />{h.name}
+                <span className="house-swatch" /><span style={{ color: h.hex }}>{h.name}</span><small className="house-col">{h.colour}</small>
               </button>
             ))}
           </div>
@@ -854,9 +875,9 @@ function ScanPopup({ person, kind, onClose }) {
   }, [onClose]);
   const h = houseOf(person.house);
   const msg = {
-    in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: EVENT.hasGift ? "Next stop: the gift counter." : "Enjoy the day - go House " + h.name + "!" },
+    in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: EVENT.hasGift ? "Next stop: the gift counter." : "Enjoy the day - go " + h.name + "!" },
     again: { top: "Welcome back!", line: "You're already checked in at " + clock(person.checkedInAt) + ".", sub: "Thank you - enjoy the day." },
-    gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go House " + h.name + "!" },
+    gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go " + h.name + "!" },
   }[kind];
   return (
     <div className="pop-back" onClick={onClose} role="dialog" aria-live="assertive">
@@ -1047,7 +1068,7 @@ function ChallengeBoard({ challenge, totals }) {
         <div className="big-tag">{isTime ? "FASTEST ON THE CLOCK" : "HOLDING THE CROWN"}</div>
         <div className="big-champ-grid">
           <div className="big-name">{leader.h.name}</div>
-          <div className="big-score num">{isTime ? fmtTime(leader.v) : <Counter value={leader.v} />}</div>
+          <div className="big-score num">{isTime ? fmtTime(leader.v) : challenge.type === "winner" ? showValue(challenge, leader.v) : <Counter value={leader.v} />}</div>
         </div>
         <div className="big-gap">{leadText()}</div>
       </div>
@@ -1069,7 +1090,7 @@ function ChallengeBoard({ challenge, totals }) {
                 </span>
               ) : null}
               <span className="big-gap-pill">{gapText(r.v)}</span>
-              <span className="big-lane-score num">{isTime ? fmtTime(r.v) : <Counter value={r.v} />}</span>
+              <span className="big-lane-score num">{isTime ? fmtTime(r.v) : challenge.type === "winner" ? showValue(challenge, r.v) : <Counter value={r.v} />}</span>
             </div>
           );
         })}
@@ -1099,8 +1120,9 @@ function OverallBoard({ standings }) {
         </div>
         <div className="pip-row">
           {CHALLENGES.map((c) => (
-            <span key={c.key} className="pip">{c.name.split(" ")[0]} <strong>{leader.s.per[c.key]}</strong></span>
+            <span key={c.key} className="pip">{c.short} <strong>{leader.s.per[c.key]}</strong></span>
           ))}
+          <span className="pip">Early <strong>{leader.s.per.bonus}</strong></span>
         </div>
       </div>
 
@@ -1112,8 +1134,9 @@ function OverallBoard({ standings }) {
             <span className="big-lane-name">{r.h.name}</span>
             <span className="pip-row pip-inline">
               {CHALLENGES.map((c) => (
-                <span key={c.key} className="pip pip-sm">{c.name.split(" ")[0]} {r.s.per[c.key]}</span>
+                <span key={c.key} className="pip pip-sm">{c.short} {r.s.per[c.key]}</span>
               ))}
+              <span className="pip pip-sm">Early {r.s.per.bonus}</span>
             </span>
             <span className="big-gap-pill">-{leader.s.total - r.s.total}</span>
             <span className="big-lane-score num"><Counter value={r.s.total} /></span>
@@ -1156,7 +1179,7 @@ function Scores({ totals, standings, go, arg }) {
             const l = leaderOf(c);
             return (
               <button key={c.key} className={"switch-btn" + (board === c.key ? " on" : "")} onClick={() => setBoard(c.key)}>
-                <span className="switch-dot" style={{ background: l.h.hex }} />
+                <span className="switch-dot" style={{ background: scored(c, l.v) ? l.h.hex : "#8a978f" }} />
                 {c.name}
               </button>
             );
@@ -1170,7 +1193,7 @@ function Scores({ totals, standings, go, arg }) {
             <div className="board-where">
               <span className="live-dot" />
               {isOverall
-                ? "Rank points - " + RANK_POINTS[0] + " for winning a challenge, down to 1"
+                ? "Fitness, Obstacle, Bingo: 500 / 300 / 200 / 100 - War Cry 100 - Tug of War 200 each - whole house in before " + EARLY_BONUS.before + " +" + EARLY_BONUS.points
                 : challenge.venue + " - " + challenge.time + " - " + challenge.metricNote}
             </div>
           </div>
@@ -1188,9 +1211,9 @@ function Scores({ totals, standings, go, arg }) {
             const l = leaderOf(c);
             return (
               <button key={c.key} className="else-card" onClick={() => setBoard(c.key)}>
-                <span className="chip-dot" style={{ background: l.h.hex }} />
+                <span className="chip-dot" style={{ background: scored(c, l.v) ? l.h.hex : "#8a978f" }} />
                 <span className="else-what">{c.name}</span>
-                <span className="else-who">{l.h.name}</span>
+                <span className="else-who">{scored(c, l.v) ? l.h.name : "No result yet"}</span>
                 <span className="num else-val">{showValue(c, l.v)}</span>
               </button>
             );
@@ -1461,7 +1484,7 @@ function PeopleIn({ people, go }) {
 
 /* ---------------- email sender ---------------- */
 
-const TPL_KEY = "grab_email_tpl_v3";
+const TPL_KEY = "grab_email_tpl_v4";
 const TPL_PRESETS = {
   confirm: {
     label: "RSVP confirmation",
@@ -1471,7 +1494,7 @@ const TPL_PRESETS = {
   reminder: {
     label: "Event reminder",
     subject: "Reminder: Grab MY Hari Sukan is on {date}",
-    message: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nWear your House {house} colours and bring this QR to check in at the lobby.",
+    message: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nWear your {colour} Hari Sukan T-shirt for House {house} and bring this QR to check in at the lobby.",
   },
   thanks: {
     label: "Thank you (after event)",
@@ -1487,7 +1510,7 @@ function loadTpl() {
 function EmailPreview({ person, subject, message }) {
   const h = houseOf(person.house);
   const html = buildEmailHtml({
-    name: person.name, token: person.token, house: h.name, houseHex: h.hex,
+    name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour,
     passUrl: passUrl(person.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + BADGE,
     message: fillTemplate(message, person), event: EVENT,
   });
@@ -1643,7 +1666,9 @@ function ScoreEntry({ totals, toast }) {
 
   const submit = async () => {
     let n;
-    if (isTime) {
+    if (c.type === "winner") {
+      n = 1;
+    } else if (isTime) {
       n = parseTime(points);
       if (n === null) return setErr("Use M:SS:CC, for example 4:50:10");
     } else {
@@ -1653,7 +1678,9 @@ function ScoreEntry({ totals, toast }) {
     setErr("");
     try {
       await db.addScore({ challenge, house, points: n, note: note.trim(), by: "Marshal" });
-      toast(isTime
+      toast(c.type === "winner"
+        ? houseOf(house).name + " marked as winner of " + c.name
+        : isTime
         ? houseOf(house).name + " logged " + fmtTime(n) + " on " + c.name
         : (n > 0 ? "+" : "") + n + " to " + houseOf(house).name + " on " + c.name, "ok");
       setPoints(""); setNote("");
@@ -1685,19 +1712,19 @@ function ScoreEntry({ totals, toast }) {
             ))}
           </div>
         </div>
-        <label className="field">
+        {c.type === "winner" ? <p className="hint">Pick the winning house, then post. {c.name} earns the winner {ptsFor(c)[0]} points. Made a mistake? Undo it in the Score ledger.</p> : <label className="field">
           <span className="field-label">{c.metricNote}</span>
           <input className="input" inputMode={isTime ? "text" : "numeric"} value={points}
             onChange={(e) => { setPoints(e.target.value); if (err) setErr(""); }}
             placeholder={isTime ? "4:50:10" : "Negative numbers deduct"} />
           {isTime && <p className="hint">Minutes : seconds : hundredths. The fastest time a house logs is the one that counts.</p>}
-        </label>
+        </label>}
         <label className="field">
           <span className="field-label">Note</span>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Wave 2 clean run" />
         </label>
         {err && <p className="err">{err}</p>}
-        <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={submit}>Post to scoreboard</button>
+        <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={submit}>{c.type === "winner" ? "Mark " + houseOf(house).name + " as winner" : "Post to scoreboard"}</button>
       </div>
       <div className="panel">
         <h3 style={{ fontSize: 24, marginBottom: 5 }}>{c.name}</h3>
@@ -1708,6 +1735,7 @@ function ScoreEntry({ totals, toast }) {
             <span className="chip-dot" style={{ background: r.h.hex }} />
             <span style={{ flex: 1, fontWeight: 700 }}>{r.h.name}</span>
             <span className="num" style={{ fontSize: isTime ? 20 : 24 }}>{showValue(c, r.v)}</span>
+            <span className="num" style={{ width: 64, textAlign: "right", color: "var(--ink-3)", fontSize: 14 }}>{scored(c, r.v) ? "+" + (ptsFor(c)[i] || 0) : ""}</span>
           </div>
         ))}
       </div>
@@ -1864,20 +1892,28 @@ export default function App() {
     return t;
   }, [scores]);
 
+  const bonus = useMemo(() => earlyBonus(people), [people]);
   const standings = useMemo(() => {
     const pts = {};
     HOUSES.forEach((h) => (pts[h.key] = { total: 0, per: {} }));
     CHALLENGES.forEach((c) => {
       const rows = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
+        .filter((r) => scored(c, r.v))
         .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v));
+      HOUSES.forEach((h) => (pts[h.key].per[c.key] = 0));
       rows.forEach((r, i) => {
-        const p = RANK_POINTS[i] || 0;
+        const p = ptsFor(c)[i] || 0;
         pts[r.h.key].per[c.key] = p;
         pts[r.h.key].total += p;
       });
     });
+    HOUSES.forEach((h) => {
+      const b = bonus[h.key].earned ? EARLY_BONUS.points : 0;
+      pts[h.key].per.bonus = b;
+      pts[h.key].total += b;
+    });
     return pts;
-  }, [totals]);
+  }, [totals, bonus]);
 
   const { page, arg } = route;
   const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;

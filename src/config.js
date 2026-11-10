@@ -36,11 +36,13 @@ export const EVENT = {
   hasGift: false,
 };
 
+// House names from Joanne. `colour` is the T-shirt colour; `key` is what the database stores
+// (Knights keep the old "green" key so existing RSVPs and the database check still work).
 export const HOUSES = [
-  { key: "blue", name: "Blue", hex: "#0B7FD4" },
-  { key: "red", name: "Red", hex: "#E8382F" },
-  { key: "green", name: "Green", hex: "#00B14F" },
-  { key: "yellow", name: "Yellow", hex: "#F2A900" },
+  { key: "blue", name: "Vikings", colour: "Blue", hex: "#0B7FD4" },
+  { key: "red", name: "Samurais", colour: "Red", hex: "#E8382F" },
+  { key: "green", name: "Knights", colour: "Purple", hex: "#7B3FBF" },
+  { key: "yellow", name: "Gladiators", colour: "Yellow", hex: "#E0A100" },
 ];
 
 // Placeholder list - replace with the client's real departments.
@@ -58,11 +60,19 @@ export const DEPARTMENTS = [
   "Other",
 ];
 
+// Point system from Joanne's sheet. `points` = what 1st, 2nd, 3rd, 4th place earn.
+// type "time": fastest time wins. "points": highest total wins. "winner": the marshal picks the winning house.
 export const CHALLENGES = [
-  { key: "fitness", name: "Fitness Challenge", type: "time", metric: "time", metricNote: "Best combined time - fastest wins", blurb: "Six timed stations - rowing, box jumps, battle ropes, wall balls, sled push and the plank hold. The clock runs from the first rep to the last.", venue: "Hall A, East Deck", time: "09:30", lead: true },
-  { key: "obstacle", name: "Obstacles", type: "points", metric: "points", metricNote: "Time-adjusted points", blurb: "A 400 m team course. Fastest clean run per wave scores highest.", venue: "Outdoor Field", time: "11:15" },
-  { key: "bingo", name: "Bingo Dash", type: "points", metric: "squares", metricNote: "Squares completed of 24", blurb: "Twenty-four squares hidden across the campus. Scan to claim.", venue: "Level 3 Atrium", time: "14:00" },
+  { key: "fitness", name: "Fitness Challenge", short: "Fitness", type: "time", metric: "time", metricNote: "Best combined time - fastest wins", points: [500, 300, 200, 100], blurb: "Six timed stations - rowing, box jumps, battle ropes, wall balls, sled push and the plank hold. The clock runs from the first rep to the last.", venue: "Competition zone", time: "10:30", lead: true },
+  { key: "obstacle", name: "Obstacle Challenge", short: "Obstacle", type: "time", metric: "time", metricNote: "Best time - fastest wins", points: [500, 300, 200, 100], blurb: "A team obstacle course. The fastest clean run wins.", venue: "Competition zone", time: "10:30" },
+  { key: "bingo", name: "Bingo Dash", short: "Bingo", type: "points", metric: "squares", metricNote: "Squares completed", points: [500, 300, 200], blurb: "Squares hidden around the venue. Complete the most to win.", venue: "Competition zone", time: "10:30" },
+  { key: "warcry", name: "War Cry", short: "War Cry", type: "winner", metric: "winner", metricNote: "Judges pick the winning house", points: [100], blurb: "Each house performs its war cry. The judges pick the best.", venue: "Main arena", time: "09:25" },
+  { key: "tugm", name: "Tug of War (Male)", short: "Tug M", type: "winner", metric: "winner", metricNote: "Winning house", points: [200], blurb: "Male teams, knockout rounds.", venue: "Level 4 Sport Hall", time: "14:45" },
+  { key: "tugf", name: "Tug of War (Female)", short: "Tug F", type: "winner", metric: "winner", metricNote: "Winning house", points: [200], blurb: "Female teams, knockout rounds.", venue: "Level 4 Sport Hall", time: "14:45" },
 ];
+
+// Whole house signed in (every RSVP'd member checked in) before this time earns the bonus. Counted automatically.
+export const EARLY_BONUS = { points: 300, before: "08:30", label: "Early sign-in bonus" };
 
 export const RANK_POINTS = [4, 3, 2, 1];
 

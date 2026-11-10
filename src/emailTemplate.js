@@ -16,14 +16,14 @@ const icon = (emoji, size = 32) =>
   `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td align="center" valign="middle" width="${size}" height="${size}" style="width:${size}px;height:${size}px;background:${SOFT};border-radius:10px;font-size:${Math.round(size * 0.5)}px;line-height:${size}px">${emoji}</td></tr></table>`;
 
 export function buildEmailHtml(o) {
-  const { name, token, house, houseHex, challenge, passUrl, agendaUrl, logoUrl, message, event = {} } = o;
+  const { name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, message, event = {} } = o;
   const color = /^#[0-9a-f]{6}$/i.test(houseHex || "") ? houseHex : GREEN;
   const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=" + encodeURIComponent(token || "");
   const title = ((event.name || "") + " " + (event.year || "")).trim();
 
   const intro = String(message || `Your registration for ${title} is confirmed. You're in House **${house || ""}**.`)
     .trim().split(/\n\s*\n/)
-    .map((p) => `<p style="margin:0 0 8px;font:15px/1.5 Arial,sans-serif;color:${INK}">${rich(p, INK).replace(/\n/g, "<br/>")}</p>`).join("");
+    .map((p) => `<p style="margin:0 0 8px;font:15px/1.5 Arial,sans-serif;color:${INK}">${rich(p, color).replace(/\n/g, "<br/>")}</p>`).join("");
 
   const detail = (emoji, k, v) => v ? `<tr>
     <td width="22" valign="top" style="padding:3px 0;font-size:14px">${emoji}</td>
@@ -38,7 +38,7 @@ export function buildEmailHtml(o) {
       <td valign="middle" style="border-left:1px solid #cfdcd3;padding:2px 0 2px 12px;font:13px/1.45 Arial,sans-serif;color:${INK}">${body}</td>
     </tr></table></td></tr>`;
 
-  const dress = (event.dressCode || []).map((d, i) => "&bull; " + esc(i === 0 && house ? String(d).replace("your house colour", "your House colour") : d)).join("<br/>");
+  const dress = (event.dressCode || []).map((d, i) => "&bull; " + (i === 0 && houseColour ? esc(String(d).replace("your house colour", "")) + `<strong style="color:${color}">${esc(String(houseColour).toLowerCase())}</strong>` : esc(d))).join("<br/>");
 
   const rates = event.parkingRates || [];
   const parkingTable = rates.length ? `<tr><td style="padding:6px 0">
@@ -107,7 +107,7 @@ export function buildEmailHtml(o) {
       <div style="font:900 14px Arial,sans-serif;color:${DARK};padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid #cfdcd3">📋 YOUR REGISTRATION DETAILS</div>
       <table width="100%" cellpadding="0" cellspacing="0">
         ${detail("👤", "Full Name", esc(name))}
-        ${detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>` : "")}
+        ${detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>${houseColour ? ` <span style="color:${MUTED}">(${esc(houseColour)})</span>` : ""}` : "")}
         ${detail("🏆", "Challenge", esc(challenge))}
         ${detail("📅", "Date", esc(event.dateLong))}
         ${detail("🕗", "Time", esc(event.eventTime))}

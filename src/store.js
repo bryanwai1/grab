@@ -42,7 +42,7 @@ const toScore = (r) => ({
 
 /* ---------------- demo backend ---------------- */
 
-const DB_KEY = "grab_demo_db_v1";
+const DB_KEY = "grab_demo_db_v2";
 const now = () => new Date().toISOString();
 
 function seed() {
@@ -61,10 +61,11 @@ function seed() {
     scores: [
       S(1, "fitness", "blue", 29010, "Wave 1"), S(2, "fitness", "red", 31244, "Wave 2"),
       S(3, "fitness", "yellow", 40312, "Wave 3"), S(4, "fitness", "green", 25205, "Wave 1 clean"),
-      S(5, "obstacle", "yellow", 510, "Clean run"), S(6, "obstacle", "blue", 480, ""),
-      S(7, "obstacle", "green", 415, "One penalty"), S(8, "obstacle", "red", 330, ""),
+      S(5, "obstacle", "yellow", 41820, "Clean run"), S(6, "obstacle", "blue", 43507, ""),
+      S(7, "obstacle", "green", 39911, "One penalty"), S(8, "obstacle", "red", 45130, ""),
       S(9, "bingo", "red", 19, ""), S(10, "bingo", "green", 17, ""),
       S(11, "bingo", "yellow", 12, ""), S(12, "bingo", "blue", 10, ""),
+      S(13, "warcry", "yellow", 1, "Judges' pick"),
     ],
   };
 }

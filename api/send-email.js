@@ -12,10 +12,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!RESEND_KEY) return res.status(200).json({ ok: false, skipped: true, error: "RESEND_KEY not set in Vercel" });
 
-  const { to, name, token, house, houseHex, challenge, passUrl, agendaUrl, logoUrl, subject, message, event = {} } = req.body || {};
+  const { to, name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, subject, message, event = {} } = req.body || {};
   if (!to || !name || !token) return res.status(400).json({ ok: false, error: "Missing fields" });
 
-  const html = buildEmailHtml({ name, token, house, houseHex, challenge, passUrl, agendaUrl, logoUrl, message, event });
+  const html = buildEmailHtml({ name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, message, event });
 
   try {
     const r = await fetch("https://api.resend.com/emails", {
