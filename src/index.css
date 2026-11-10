@@ -676,6 +676,62 @@ table.grid tr:last-child td { border-bottom: 0; }
   .pip-inline { display: none; }
 }
 
+
+/* waiting (nobody scored yet) - neutral, no leader */
+.wait-card {
+  border-radius: 28px; padding: clamp(24px, 3vw, 40px); text-align: center;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+}
+.wait-line {
+  font-size: clamp(38px, 6vw, 84px); font-weight: 800; margin-top: 8px;
+  font-variation-settings: "wdth" 124; letter-spacing: -0.04em; line-height: 1;
+}
+.wait-sub { color: #9dbdaa; font-size: clamp(15px, 1.6vw, 20px); margin-top: 12px; font-weight: 600; }
+.wait-houses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: 1; min-height: 0; }
+.wait-house {
+  border-radius: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; min-height: clamp(110px, 22vh, 260px); color: #fff; text-shadow: 0 3px 16px rgba(0,0,0,.3);
+}
+.wait-name { font-size: clamp(24px, 3.4vw, 52px); font-weight: 800; letter-spacing: -0.03em; font-variation-settings: "wdth" 118; }
+.wait-col { font-size: 13px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; opacity: .85; }
+.lane-wait .lane-fill { opacity: .18 !important; }
+.lane-wait-txt { font-size: clamp(15px, 1.6vw, 20px) !important; color: #9dbdaa; font-weight: 700; }
+
+/* screen setup / TV mode */
+.screen-btn {
+  position: absolute; right: 14px; bottom: 12px; z-index: 5;
+  background: rgba(255,255,255,.08); color: #cfe3d6; border: 1px solid rgba(255,255,255,.14);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700; opacity: .55;
+}
+.screen-btn:hover { opacity: 1; }
+.stage-board.tv .screen-btn { opacity: .18; font-size: 18px; padding: 6px 11px; }
+.stage-board.tv .screen-btn:hover { opacity: .9; }
+.stage-board.tv .board-head { margin-top: 4px; }
+.picker-back {
+  position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.scr-picker {
+  width: min(640px, 100%); max-height: 90vh; overflow: auto;
+  background: #0d2418; border: 1px solid rgba(255,255,255,.16); border-radius: 22px; padding: 22px; color: #fff;
+}
+.picker-title { font-size: 22px; font-weight: 800; }
+.picker-sub { color: #9dbdaa; font-size: 14px; margin: 6px 0 14px; }
+.picker-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+  padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.04); margin-bottom: 8px;
+}
+.picker-row.on { outline: 2px solid #3ee87f; }
+.picker-name { font-weight: 700; }
+.picker-link { grid-column: 1 / -1; font-size: 12px; color: #86a894; font-family: monospace; }
+.picker-go {
+  background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+}
+.picker-tv { background: #3ee87f; color: #06180e; border-color: #3ee87f; }
+.picker-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; }
+@media (max-width: 900px) { .wait-houses { grid-template-columns: repeat(2, 1fr); } }
+
 /* ================= RSVP / pass / staff additions ================= */
 
 .nav-cta { background: var(--grab); color: #fff !important; }

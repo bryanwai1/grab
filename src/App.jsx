@@ -93,7 +93,7 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
 
 function readRoute() {
   const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
-  return { page: parts[0] || "home", arg: parts[1] ? decodeURIComponent(parts[1]) : "" };
+  return { page: parts[0] || "home", arg: parts[1] ? decodeURIComponent(parts[1]) : "", extra: parts[2] || "" };
 }
 
 function useRoute() {
@@ -1060,6 +1060,7 @@ function useBoardRanking(challenge, totals) {
 function ChallengeBoard({ challenge, totals }) {
   const { order, rank, leader, isTime, movers, bumps, barPct, gapText, leadText } =
     useBoardRanking(challenge, totals);
+  if (!HOUSES.some((h) => scored(challenge, totals[challenge.key][h.key]))) return <WaitingBoard title={challenge.name.toUpperCase()} />;
 
   return (
     <div className="bigboard">
@@ -1070,11 +1071,19 @@ function ChallengeBoard({ challenge, totals }) {
           <div className="big-name">{leader.h.name}</div>
           <div className="big-score num">{isTime ? fmtTime(leader.v) : challenge.type === "winner" ? showValue(challenge, leader.v) : <Counter value={leader.v} />}</div>
         </div>
-        <div className="big-gap">{leadText()}</div>
+        <div className="big-gap">{order.slice(1).some((r) => scored(challenge, r.v)) ? leadText() : challenge.type === "winner" ? "Winner" : "first result in"}</div>
       </div>
 
       <div className="big-lanes">
         {order.slice(1).map((r) => {
+          if (!scored(challenge, r.v)) return (
+            <div key={r.h.key} className="big-lane lane-wait">
+              <span className="lane-fill" style={{ background: r.h.hex, width: "100%", opacity: 0.18 }} />
+              <span className="big-rank">&nbsp;</span>
+              <span className="big-lane-name">{r.h.name}</span>
+              <span className="big-lane-score lane-wait-txt">{challenge.type === "winner" ? "" : "Waiting"}</span>
+            </div>
+          );
           const mv = movers[r.h.key];
           const gained = bumps[r.h.key];
           return (
@@ -1099,8 +1108,30 @@ function ChallengeBoard({ challenge, totals }) {
   );
 }
 
+// Shown while no house has a result yet: every house looks equal, no ranks or "-0" gaps.
+function WaitingBoard({ title }) {
+  return (
+    <div className="bigboard">
+      <div className="wait-card">
+        <div className="big-tag">{title}</div>
+        <div className="wait-line">Results coming soon</div>
+        <div className="wait-sub">Every house starts level. Good luck, everyone!</div>
+      </div>
+      <div className="wait-houses">
+        {HOUSES.map((h) => (
+          <div key={h.key} className="wait-house" style={{ background: h.hex }}>
+            <span className="wait-name">{h.name}</span>
+            <span className="wait-col">{h.colour}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OverallBoard({ standings }) {
   const rows = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
+  if (rows.every((r) => r.s.total === 0)) return <WaitingBoard title="HOUSE CUP" />;
   const leader = rows[0];
   const runnerUp = rows[1];
   const top = Math.max(1, leader.s.total);
@@ -1149,9 +1180,23 @@ function OverallBoard({ standings }) {
 
 const BOARD_KEYS = ["overall"].concat(CHALLENGES.map((c) => c.key));
 
-function Scores({ totals, standings, go, arg }) {
-  const board = BOARD_KEYS.indexOf(arg) >= 0 ? arg : "overall";
-  const setBoard = (b) => go("scores", b);
+const ROTATE_SECS = 15;
+
+function Scores({ totals, standings, go, arg, tv }) {
+  const rotating = arg === "rotate";
+  const [tick, setTick] = useState(0);
+  const [picker, setPicker] = useState(false);
+  useEffect(() => {
+    if (!rotating) return undefined;
+    const t = setInterval(() => setTick((n) => n + 1), ROTATE_SECS * 1000);
+    return () => clearInterval(t);
+  }, [rotating]);
+  const board = rotating ? BOARD_KEYS[tick % BOARD_KEYS.length] : BOARD_KEYS.indexOf(arg) >= 0 ? arg : "overall";
+  const goBoard = (b, asTv) => {
+    window.location.hash = "/scores/" + b + (asTv ? "/tv" : "");
+    setPicker(false);
+  };
+  const setBoard = (b) => goBoard(b, tv);
   const isOverall = board === "overall";
   const challenge = isOverall ? null : challengeOf(board);
 
@@ -1159,35 +1204,72 @@ function Scores({ totals, standings, go, arg }) {
     HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
       .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))[0];
   const cupLeader = HOUSES.map((h) => ({ h, v: standings[h.key].total })).sort((a, b) => b.v - a.v)[0];
+  const cupScored = cupLeader.v > 0;
   const activeLeader = isOverall ? cupLeader : leaderOf(challenge);
+  const activeScored = isOverall ? cupScored : scored(challenge, activeLeader.v);
+  const NEUTRAL = "#8a978f";
+
+  const screens = [{ key: "overall", name: "Overall cup" }]
+    .concat(CHALLENGES.map((c) => ({ key: c.key, name: c.name })))
+    .concat([{ key: "rotate", name: "Rotate all boards (" + ROTATE_SECS + "s each)" }]);
 
   return (
-    <div className="stage stage-board">
+    <div className={"stage stage-board" + (tv ? " tv" : "")}>
       <div className="stage-img only-landscape" style={BG("bg-hero.jpg")} />
       <div className="stage-img only-portrait" style={BG("bg-hero-p.jpg")} />
       <div className="stage-scrim" />
       <div className="stage-mesh" />
       <Particles className="stage-canvas" density={22} />
 
-      <div className="stage-in">
-        <div className="board-switch">
-          <button className={"switch-btn" + (isOverall ? " on" : "")} onClick={() => setBoard("overall")}>
-            <span className="switch-dot" style={{ background: cupLeader.h.hex }} />
-            Overall cup
-          </button>
-          {CHALLENGES.map((c) => {
-            const l = leaderOf(c);
-            return (
-              <button key={c.key} className={"switch-btn" + (board === c.key ? " on" : "")} onClick={() => setBoard(c.key)}>
-                <span className="switch-dot" style={{ background: scored(c, l.v) ? l.h.hex : "#8a978f" }} />
-                {c.name}
-              </button>
-            );
-          })}
-          <button className="switch-btn switch-exit" onClick={() => go("home")}>Exit</button>
-        </div>
+      {tv && (
+        <button className="screen-btn" onClick={() => setPicker(true)} title="Choose what this screen shows">{"\u2699"}</button>
+      )}
 
-        <div className="board-head" style={{ borderColor: activeLeader.h.hex + "55" }}>
+      {picker && (
+        <div className="picker-back" onClick={() => setPicker(false)}>
+          <div className="scr-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="picker-title">What should this screen show?</div>
+            <div className="picker-sub">TV mode hides all menus. Bookmark the link to reopen it on that screen.</div>
+            {screens.map((sc) => (
+              <div key={sc.key} className={"picker-row" + (sc.key === (rotating ? "rotate" : board) ? " on" : "")}>
+                <span className="picker-name">{sc.name}</span>
+                <button className="picker-go" onClick={() => goBoard(sc.key, false)}>Show</button>
+                <button className="picker-go picker-tv" onClick={() => goBoard(sc.key, true)}>TV mode</button>
+                <span className="picker-link">#/scores/{sc.key}/tv</span>
+              </div>
+            ))}
+            <div className="picker-foot">
+              {tv && <button className="picker-go" onClick={() => goBoard(rotating ? "rotate" : board, false)}>Exit TV mode</button>}
+              <button className="picker-go" onClick={() => go("home")}>Exit scoreboard</button>
+              <button className="picker-go" onClick={() => setPicker(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="stage-in">
+        {!tv && (
+          <div className="board-switch">
+            <button className={"switch-btn" + (isOverall && !rotating ? " on" : "")} onClick={() => setBoard("overall")}>
+              <span className="switch-dot" style={{ background: cupScored ? cupLeader.h.hex : NEUTRAL }} />
+              Overall cup
+            </button>
+            {CHALLENGES.map((c) => {
+              const l = leaderOf(c);
+              return (
+                <button key={c.key} className={"switch-btn" + (board === c.key && !rotating ? " on" : "")} onClick={() => setBoard(c.key)}>
+                  <span className="switch-dot" style={{ background: scored(c, l.v) ? l.h.hex : NEUTRAL }} />
+                  {c.name}
+                </button>
+              );
+            })}
+            <button className={"switch-btn" + (rotating ? " on" : "")} onClick={() => setBoard("rotate")}>Rotate</button>
+            <button className="switch-btn switch-exit" onClick={() => setPicker(true)}>Screen setup</button>
+            <button className="switch-btn" onClick={() => go("home")}>Exit</button>
+          </div>
+        )}
+
+        <div className="board-head" style={{ borderColor: (activeScored ? activeLeader.h.hex : NEUTRAL) + "55" }}>
           <div>
             <div className="board-title">{isOverall ? "Overall cup" : challenge.name}</div>
             <div className="board-where">
@@ -1206,27 +1288,29 @@ function Scores({ totals, standings, go, arg }) {
           ? <OverallBoard standings={standings} />
           : <ChallengeBoard key={challenge.key} challenge={challenge} totals={totals} />}
 
-        <div className="elsewhere">
-          {(isOverall ? CHALLENGES : CHALLENGES.filter((c) => c.key !== board)).map((c) => {
-            const l = leaderOf(c);
-            return (
-              <button key={c.key} className="else-card" onClick={() => setBoard(c.key)}>
-                <span className="chip-dot" style={{ background: scored(c, l.v) ? l.h.hex : "#8a978f" }} />
-                <span className="else-what">{c.name}</span>
-                <span className="else-who">{scored(c, l.v) ? l.h.name : "No result yet"}</span>
-                <span className="num else-val">{showValue(c, l.v)}</span>
+        {!tv && (
+          <div className="elsewhere">
+            {(isOverall ? CHALLENGES : CHALLENGES.filter((c) => c.key !== board)).map((c) => {
+              const l = leaderOf(c);
+              return (
+                <button key={c.key} className="else-card" onClick={() => setBoard(c.key)}>
+                  <span className="chip-dot" style={{ background: scored(c, l.v) ? l.h.hex : NEUTRAL }} />
+                  <span className="else-what">{c.name}</span>
+                  <span className="else-who">{scored(c, l.v) ? l.h.name : "No result yet"}</span>
+                  <span className="num else-val">{showValue(c, l.v)}</span>
+                </button>
+              );
+            })}
+            {!isOverall && (
+              <button className="else-card else-cup" onClick={() => setBoard("overall")}>
+                <span className="chip-dot" style={{ background: cupScored ? cupLeader.h.hex : NEUTRAL }} />
+                <span className="else-what">Overall cup</span>
+                <span className="else-who">{cupScored ? cupLeader.h.name : "No points yet"}</span>
+                <span className="num else-val">{cupScored ? cupLeader.v : "-"}</span>
               </button>
-            );
-          })}
-          {!isOverall && (
-            <button className="else-card else-cup" onClick={() => setBoard("overall")}>
-              <span className="chip-dot" style={{ background: cupLeader.h.hex }} />
-              <span className="else-what">Overall cup</span>
-              <span className="else-who">{cupLeader.h.name}</span>
-              <span className="num else-val">{cupLeader.v}</span>
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1918,7 +2002,7 @@ export default function App() {
   const { page, arg } = route;
   const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;
 
-  if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} />{toastEl}</>;
+  if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} tv={route.extra === "tv"} />{toastEl}</>;
 
   let body;
   if (!loaded && page !== "home" && page !== "rsvp" && page !== "agenda") body = <div className="shell section"><p className="lede">{loadErr || "Loading..."}</p></div>;
