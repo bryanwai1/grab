@@ -36,3 +36,14 @@ create policy "scores all" on grab_scores for all using (true) with check (true)
 
 alter publication supabase_realtime add table grab_people;
 alter publication supabase_realtime add table grab_scores;
+
+-- Admin-editable settings (challenges, points, time deductions, TV rotate speed).
+-- Already set up? Run just this block once:
+create table if not exists grab_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table grab_settings enable row level security;
+create policy "settings all" on grab_settings for all using (true) with check (true);
+alter publication supabase_realtime add table grab_settings;

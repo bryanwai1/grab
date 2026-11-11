@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       headers: { Authorization: "Bearer " + RESEND_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: FROM_EMAIL, to: [to],
-        subject: subject || "You're in - " + (event.name || "RSVP") + " (House " + house + ")",
+        subject: subject || "Grab MY Hari Sukan 2026 - Your Check-In QR Code and Event Details",
         html,
       }),
     });

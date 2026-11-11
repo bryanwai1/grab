@@ -113,6 +113,7 @@ export function subscribe(onChange) {
   const ch = supa.channel("grab-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "grab_people" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "grab_scores" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "grab_settings" }, onChange)
     .subscribe();
   const poll = setInterval(onChange, 15000); // safety net if realtime drops
   return () => { clearInterval(poll); supa.removeChannel(ch); };
@@ -349,4 +350,47 @@ export function resetDemo() {
   if (supa) return;
   try { localStorage.removeItem(DB_KEY); } catch (e) { /* ignore */ }
   readDb();
+}
+
+/* ---------------- settings (challenges, display) ---------------- */
+// Stored in table grab_settings (key text primary key, value jsonb).
+// Returns {} when nothing is saved yet (or the table doesn't exist yet),
+// so the app falls back to the defaults in config.js.
+
+const SETTINGS_KEY = "grab_demo_settings_v1";
+export const SETTINGS_SQL = `create table if not exists grab_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table grab_settings enable row level security;
+create policy "settings all" on grab_settings for all using (true) with check (true);
+alter publication supabase_realtime add table grab_settings;`;
+
+export async function loadSettings() {
+  if (!supa) {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch (e) { return {}; }
+  }
+  const { data, error } = await supa.from("grab_settings").select("key,value");
+  if (error) return { _missing: true };
+  const out = {};
+  data.forEach((r) => (out[r.key] = r.value));
+  return out;
+}
+
+export async function saveSetting(key, value) {
+  if (!supa) {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch (e) { /* ignore */ }
+    all[key] = value;
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(all)); } catch (e) { /* ignore */ }
+    listeners.forEach((f) => f());
+    return;
+  }
+  const { error } = await supa.from("grab_settings").upsert({ key, value, updated_at: now() });
+  if (error) {
+    const e = new Error(error.message);
+    e.missingTable = /grab_settings|relation|schema cache/i.test(error.message || "");
+    throw e;
+  }
 }

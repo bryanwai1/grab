@@ -25,7 +25,61 @@ function parseTime(str) {
 
 const showValue = (ch, v) => (ch.type === "time" ? fmtTime(v) : ch.type === "winner" ? (v > 0 ? "Winner" : "-") : String(v));
 const scored = (ch, v) => (ch.type === "time" ? isFinite(v) : v > 0);
-const ptsFor = (ch) => ch.points || RANK_POINTS;
+const ptsFor = (ch) => (ch.points && ch.points.length ? ch.points : RANK_POINTS);
+// Defaults from config.js; the admin can override them (saved in grab_settings).
+const DEFAULT_CHALLENGES = CHALLENGES.map((c) => ({ ...c, points: c.points.slice() }));
+const DISPLAY = { rotateSecs: 20 };
+const ROTATE_CHOICES = [10, 15, 20, 30, 45, 60];
+// Time deduction (time challenges only):
+//  scoring "rank":      place points (500/300/200/100)
+//  scoring "penalty":   place points minus `lose` for every full `every` minutes over the time limit
+//  scoring "countdown": start with `start` points, minus `lose` for every full `every` minutes taken
+function deduction(c, cs) {
+  const every = Number(c.every) || 0, lose = Number(c.lose) || 0;
+  if (c.type !== "time" || !every || !lose || !isFinite(cs)) return 0;
+  const mins = cs / 6000;
+  if (c.scoring === "penalty") return Math.floor(Math.max(0, mins - (Number(c.limit) || 0)) / every) * lose;
+  if (c.scoring === "countdown") return Math.floor(mins / every) * lose;
+  return 0;
+}
+// Ranked results with the points each house earns: [{ h, v, rank, pts, lost }]
+function rankChallenge(c, totals) {
+  const col = totals[c.key] || {};
+  return HOUSES.map((h) => ({ h, v: col[h.key] }))
+    .filter((r) => r.v !== undefined && scored(c, r.v))
+    .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
+    .map((r, i) => {
+      const lost = deduction(c, r.v);
+      const base = c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
+      return { ...r, rank: i + 1, lost, pts: Math.max(0, base - lost) };
+    });
+}
+function ruleText(c) {
+  const pts = ptsFor(c);
+  if (c.type === "winner") return "Winner +" + pts[0];
+  if (c.type === "time" && c.scoring === "countdown") return "Start " + (c.start || 0) + " pts, -" + c.lose + " every " + c.every + " min";
+  let t = pts.join(" / ");
+  if (c.type === "time" && c.scoring === "penalty") t += ", -" + c.lose + " every " + c.every + " min over " + (c.limit || 0) + " min";
+  return t;
+}
+function cleanChallenge(c) {
+  const type = ["time", "points", "winner"].includes(c.type) ? c.type : "points";
+  const points = (Array.isArray(c.points) ? c.points : String(c.points || "").split(/[,/ ]+/))
+    .map(Number).filter((n) => isFinite(n) && n >= 0);
+  return {
+    ...c, type, name: String(c.name || "Challenge").trim(), short: String(c.short || c.name || "").trim().slice(0, 12),
+    points: type === "winner" ? [points[0] || 100] : points.length ? points : [4, 3, 2, 1],
+    metricNote: c.metricNote || (type === "time" ? "Fastest time wins" : type === "winner" ? "Winning house" : "Highest score wins"),
+    venue: c.venue || "", time: c.time || "", blurb: c.blurb || "",
+    scoring: type === "time" && ["penalty", "countdown"].includes(c.scoring) ? c.scoring : "rank",
+  };
+}
+function applySettings(st) {
+  const list = st && Array.isArray(st.challenges) && st.challenges.length ? st.challenges.map(cleanChallenge) : DEFAULT_CHALLENGES.map((c) => ({ ...c }));
+  CHALLENGES.splice(0, CHALLENGES.length, ...list);
+  const r = st && st.display && Number(st.display.rotateSecs);
+  DISPLAY.rotateSecs = ROTATE_CHOICES.includes(r) ? r : 20;
+}
 // Time of day in Malaysia, as minutes after midnight.
 const myMinutes = (iso) => {
   const t = new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -1252,20 +1306,23 @@ function OverallBoard({ standings }) {
   );
 }
 
-const BOARD_KEYS = ["overall"].concat(CHALLENGES.map((c) => c.key));
+const boardKeys = () => ["overall"].concat(CHALLENGES.map((c) => c.key));
 
-const ROTATE_SECS = 15;
 
 function Scores({ totals, standings, go, arg, tv }) {
   const rotating = arg === "rotate";
+  const secs = DISPLAY.rotateSecs;
   const [tick, setTick] = useState(0);
   const [picker, setPicker] = useState(false);
   useEffect(() => {
     if (!rotating) return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), ROTATE_SECS * 1000);
+    const t = setInterval(() => setTick((n) => n + 1), secs * 1000);
     return () => clearInterval(t);
-  }, [rotating]);
-  const board = rotating ? BOARD_KEYS[tick % BOARD_KEYS.length] : BOARD_KEYS.indexOf(arg) >= 0 ? arg : "overall";
+  }, [rotating, secs]);
+  const keys = boardKeys();
+  const board = rotating ? keys[tick % keys.length] : keys.indexOf(arg) >= 0 ? arg : "overall";
+  const nextKey = keys[(tick + 1) % keys.length];
+  const nextName = nextKey === "overall" ? "Overall cup" : challengeOf(nextKey).name;
   const goBoard = (b, asTv) => {
     window.location.hash = "/scores/" + b + (asTv ? "/tv" : "");
     setPicker(false);
@@ -1285,7 +1342,7 @@ function Scores({ totals, standings, go, arg, tv }) {
 
   const screens = [{ key: "overall", name: "Overall cup" }]
     .concat(CHALLENGES.map((c) => ({ key: c.key, name: c.name })))
-    .concat([{ key: "rotate", name: "Rotate all boards (" + ROTATE_SECS + "s each)" }]);
+    .concat([{ key: "rotate", name: "Rotate all boards (" + DISPLAY.rotateSecs + "s each)" }]);
 
   return (
     <div className={"stage stage-board" + (tv ? " tv" : "")}>
@@ -1321,6 +1378,12 @@ function Scores({ totals, standings, go, arg, tv }) {
         </div>
       )}
 
+      {rotating && (
+        <div className="rot-wrap" aria-hidden="true">
+          <div key={tick + "-" + DISPLAY.rotateSecs} className="rot-bar" style={{ animationDuration: DISPLAY.rotateSecs + "s" }} />
+          <div className="rot-next">Next: {nextName}</div>
+        </div>
+      )}
       <div className="stage-in">
         {!tv && (
           <div className="board-switch">
@@ -1349,8 +1412,8 @@ function Scores({ totals, standings, go, arg, tv }) {
             <div className="board-where">
               <span className="live-dot" />
               {isOverall
-                ? "Fitness, Obstacle, Bingo: 500 / 300 / 200 / 100 - War Cry 100 - Tug of War 200 each - whole house in before " + EARLY_BONUS.before + " +" + EARLY_BONUS.points
-                : challenge.venue + " - " + challenge.time + " - " + challenge.metricNote}
+                ? CHALLENGES.map((c) => c.short + " " + ruleText(c)).join(" - ") + " - whole house in before " + EARLY_BONUS.before + " +" + EARLY_BONUS.points
+                : [challenge.venue, challenge.time, challenge.limit ? challenge.limit + " min limit" : "", challenge.metricNote, ruleText(challenge)].filter(Boolean).join(" - ")}
             </div>
           </div>
           <div className="board-brand">
@@ -1643,11 +1706,11 @@ function PeopleIn({ people, go }) {
 
 /* ---------------- email sender ---------------- */
 
-const TPL_KEY = "grab_email_tpl_v4";
+const TPL_KEY = "grab_email_tpl_v5";
 const TPL_PRESETS = {
   confirm: {
     label: "RSVP confirmation",
-    subject: "You're in - {name}, see you at Hari Sukan (House {house})",
+    subject: "Grab MY Hari Sukan 2026 - Your Check-In QR Code and Event Details",
     message: "Your registration for Grab MY Hari Sukan 2026 is confirmed. You're in House **{house}**.",
   },
   reminder: {
@@ -1688,6 +1751,8 @@ function EmailCenter({ people, toast }) {
   const [house, setHouse] = useState("");
   const [picked, setPicked] = useState(() => new Set());
   const [testTo, setTestTo] = useState("");
+  const [testName, setTestName] = useState("");
+  const [testHouse, setTestHouse] = useState("");
   const [prog, setProg] = useState(null); // { done, total, ok, fail, errors }
   const stopRef = useRef(false);
   const msgRef = useRef(null);
@@ -1715,7 +1780,10 @@ function EmailCenter({ people, toast }) {
 
   const sendTest = async () => {
     if (!/^\S+@\S+\.\S+$/.test(testTo.trim())) return toast("Enter a valid test email", "bad");
-    const r = await sendPassEmail(sample, { ...tpl, to: testTo.trim() });
+    // Test emails use the name/house typed here and a dummy pass code (GRB-TEST00),
+    // never a real guest's QR.
+    const t = { ...sample, name: testName.trim() || sample.name, house: testHouse || sample.house, department: "Test", token: "GRB-TEST00" };
+    const r = await sendPassEmail(t, { ...tpl, to: testTo.trim() });
     toast(r.ok ? "Test sent to " + testTo.trim() : r.error, r.ok ? "ok" : "bad");
   };
 
@@ -1810,10 +1878,15 @@ function EmailCenter({ people, toast }) {
 
         <h3 style={{ fontSize: 18, margin: "26px 0 10px" }}>Send a test first</h3>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@grab.com" />
+          <input className="input" style={{ flex: "1 1 180px" }} value={testName} onChange={(e) => setTestName(e.target.value)} placeholder="Name e.g. Michelle Khoo" />
+          <select className="input" style={{ flex: "0 1 170px" }} value={testHouse} onChange={(e) => setTestHouse(e.target.value)}>
+            <option value="">House...</option>
+            {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name} ({h.colour})</option>)}
+          </select>
+          <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="their@email.com" />
           <button className="btn btn-ghost" onClick={sendTest}>Send test</button>
         </div>
-        <p className="hint" style={{ marginTop: 8 }}>Uses {sample.name}'s details and QR so you can see the real email.</p>
+        <p className="hint" style={{ marginTop: 8 }}>Test emails use the name and house you type here with a dummy QR (GRB-TEST00) - never a real guest's pass.</p>
       </div>
       <div className="email-side">
         <div className="field-label" style={{ marginBottom: 10 }}>Live preview - {sample.name}</div>
@@ -1824,7 +1897,8 @@ function EmailCenter({ people, toast }) {
 }
 
 function ScoreEntry({ totals, toast }) {
-  const [challenge, setChallenge] = useState("fitness");
+  const [pick, setChallenge] = useState(CHALLENGES[0].key);
+  const challenge = CHALLENGES.some((x) => x.key === pick) ? pick : CHALLENGES[0].key;
   const [house, setHouse] = useState("red");
   const [points, setPoints] = useState("");
   const [note, setNote] = useState("");
@@ -1856,7 +1930,10 @@ function ScoreEntry({ totals, toast }) {
     } catch (e) { setErr("Could not save. Try again."); }
   };
 
-  const rows = HOUSES.map((h) => ({ h, v: totals[challenge][h.key] }))
+  const ranked = rankChallenge(c, totals);
+  const earned = {};
+  ranked.forEach((r) => (earned[r.h.key] = r));
+  const rows = HOUSES.map((h) => ({ h, v: (totals[challenge] || {})[h.key] }))
     .sort((a, b) => (isTime ? a.v - b.v : b.v - a.v));
 
   return (
@@ -1897,14 +1974,14 @@ function ScoreEntry({ totals, toast }) {
       </div>
       <div className="panel">
         <h3 style={{ fontSize: 24, marginBottom: 5 }}>{c.name}</h3>
-        <p className="hint" style={{ marginBottom: 18 }}>{c.metricNote}</p>
+        <p className="hint" style={{ marginBottom: 18 }}>{c.metricNote} - {ruleText(c)}{c.limit ? " - time limit " + c.limit + " min" : ""}</p>
         {rows.map((r, i) => (
           <div key={r.h.key} style={{ display: "flex", alignItems: "center", gap: 13, padding: "13px 0", borderBottom: i === HOUSES.length - 1 ? 0 : "1px solid var(--line)" }}>
             <span style={{ width: 13, color: "var(--ink-3)", fontSize: 14 }}>{i + 1}</span>
             <span className="chip-dot" style={{ background: r.h.hex }} />
             <span style={{ flex: 1, fontWeight: 700 }}>{r.h.name}</span>
             <span className="num" style={{ fontSize: isTime ? 20 : 24 }}>{showValue(c, r.v)}</span>
-            <span className="num" style={{ width: 64, textAlign: "right", color: "var(--ink-3)", fontSize: 14 }}>{scored(c, r.v) ? "+" + (ptsFor(c)[i] || 0) : ""}</span>
+            <span className="num" style={{ width: 96, textAlign: "right", color: "var(--ink-3)", fontSize: 14 }}>{earned[r.h.key] ? "+" + earned[r.h.key].pts + (earned[r.h.key].lost ? " (-" + earned[r.h.key].lost + ")" : "") : ""}</span>
           </div>
         ))}
       </div>
@@ -1977,13 +2054,7 @@ function saveBlob(blob, name) {
 
 // Results per challenge: [{ c, rows: [{ rank, h, v, pts }] }]
 function challengeResults(totals) {
-  return CHALLENGES.map((c) => {
-    const rows = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
-      .filter((r) => scored(c, r.v))
-      .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
-      .map((r, i) => ({ ...r, rank: i + 1, pts: ptsFor(c)[i] || 0 }));
-    return { c, rows };
-  });
+  return CHALLENGES.map((c) => ({ c, rows: rankChallenge(c, totals) }));
 }
 
 async function exportExcel({ people, scores, totals, standings, bonus, winnersOnly }) {
@@ -2013,7 +2084,7 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
   const res = [["Challenge", "Rank", "House", "Colour", "Result", "Points awarded"]];
   challengeResults(totals).forEach(({ c, rows }) => {
     if (!rows.length) res.push([c.name, "", "No result yet", "", "", ""]);
-    rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v), r.pts]));
+    rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v) + (r.lost ? " (-" + r.lost + " time deduction)" : ""), r.pts]));
   });
   HOUSES.forEach((h) => res.push([EARLY_BONUS.label + " (all in before " + EARLY_BONUS.before + ")", "", h.name, h.colour,
     bonus[h.key].inTime + " / " + bonus[h.key].team + " in time", bonus[h.key].earned ? EARLY_BONUS.points : 0]));
@@ -2112,7 +2183,172 @@ function BackupPanel({ people, scores, totals, standings, bonus, health, toast }
   );
 }
 
-function Admin({ people, scores, totals, standings, bonus, health, go, toast }) {
+/* ================= challenge setup (admin) ================= */
+
+const TYPE_LABEL = { time: "Fastest time wins", points: "Highest score wins", winner: "Judges pick a winner" };
+const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 10) || "game";
+
+function ChallengeSetup({ scores, settingsInfo, toast }) {
+  const fresh = () => CHALLENGES.map((c) => ({ ...c, pointsText: ptsFor(c).join(", ") }));
+  const [list, setList] = useState(fresh);
+  const [rotate, setRotate] = useState(DISPLAY.rotateSecs);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [sqlNeeded, setSqlNeeded] = useState(false);
+  const edit = (i, patch) => { setList((l) => l.map((c, k) => (k === i ? { ...c, ...patch } : c))); setDirty(true); };
+  const move = (i, d) => { setList((l) => { const n = l.slice(); const [x] = n.splice(i, 1); n.splice(i + d, 0, x); return n; }); setDirty(true); };
+  const remove = (i) => {
+    const c = list[i];
+    if (list.length <= 1) return toast("Keep at least one challenge", "bad");
+    const n = scores.filter((s) => s.challenge === c.key).length;
+    if (!window.confirm("Remove " + c.name + "?" + (n ? "\n\n" + n + " score(s) already logged for it will stop counting (they stay in the ledger and come back if you re-add it)." : ""))) return;
+    setList((l) => l.filter((_, k) => k !== i)); setDirty(true);
+  };
+  const add = () => {
+    let key = "g" + Date.now().toString(36).slice(-5);
+    setList((l) => l.concat([{ key, name: "New challenge", short: "", type: "points", pointsText: "500, 300, 200, 100", metricNote: "Highest score wins", venue: "", time: "", scoring: "rank" }]));
+    setDirty(true);
+  };
+  const save = async () => {
+    const out = list.map((c) => {
+      const { pointsText, ...rest } = c;
+      const key = rest.key || slug(rest.name) + Date.now().toString(36).slice(-3);
+      return cleanChallenge({ ...rest, key, points: pointsText, start: Number(rest.start) || 0, every: Number(rest.every) || 0, lose: Number(rest.lose) || 0, limit: Number(rest.limit) || 0 });
+    });
+    const bad = out.find((c) => c.type === "time" && c.scoring !== "rank" && (!c.every || !c.lose));
+    if (bad) return toast(bad.name + ": fill in 'every X minutes' and 'points lost'", "bad");
+    setBusy(true);
+    try {
+      await db.saveSetting("challenges", out);
+      await db.saveSetting("display", { rotateSecs: Number(rotate) });
+      setSqlNeeded(false); setDirty(false);
+      toast("Saved - all screens update within a few seconds");
+    } catch (e) {
+      if (e.missingTable) setSqlNeeded(true);
+      toast("Could not save: " + e.message, "bad");
+    } finally { setBusy(false); }
+  };
+  const reset = () => {
+    if (!window.confirm("Put all challenges back to the original setup (Joanne's sheet)?")) return;
+    setList(DEFAULT_CHALLENGES.map((c) => ({ ...c, pointsText: ptsFor(c).join(", ") }))); setDirty(true);
+  };
+
+  return (
+    <div className="bk-stack">
+      {(sqlNeeded || settingsInfo.missing) && db.MODE === "live" && (
+        <div className="panel">
+          <h3>One-time database step</h3>
+          <p className="hint" style={{ margin: "6px 0 10px" }}>To save challenge settings for every screen, run this once in Supabase (SQL Editor &rarr; New query &rarr; Run). Until then the original challenges are used.</p>
+          <pre className="sql-box">{db.SETTINGS_SQL}</pre>
+          <button className="btn btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(db.SETTINGS_SQL); toast("SQL copied"); }}>Copy SQL</button>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="cs-head">
+          <h3>TV scoreboard</h3>
+          <label className="cs-inline">Rotate boards every
+            <select className="input cs-sel" value={rotate} onChange={(e) => { setRotate(Number(e.target.value)); setDirty(true); }}>
+              {ROTATE_CHOICES.map((n) => <option key={n} value={n}>{n} seconds</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="hint" style={{ marginTop: 6 }}>Screens showing <b>#/scores/rotate/tv</b> cycle through the Overall cup and every challenge at this speed.</p>
+      </div>
+
+      {list.map((c, i) => {
+        const isTime = c.type === "time";
+        return (
+          <div key={c.key} className="panel cs-card">
+            <div className="cs-head">
+              <span className="cs-num">{i + 1}</span>
+              <input className="input cs-name" value={c.name} onChange={(e) => edit(i, { name: e.target.value, ...(!c.short || c.short === String(c.name).slice(0, 12) ? { short: e.target.value.slice(0, 12) } : {}) })} aria-label="Challenge name" />
+              <div className="cs-tools">
+                <button className="btn btn-ghost btn-xs" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">&uarr;</button>
+                <button className="btn btn-ghost btn-xs" disabled={i === list.length - 1} onClick={() => move(i, 1)} aria-label="Move down">&darr;</button>
+                <button className="btn btn-ghost btn-xs cs-del" onClick={() => remove(i)}>Remove</button>
+              </div>
+            </div>
+            <div className="cs-grid">
+              <label className="field"><span className="field-label">How it is won</span>
+                <select className="input" value={c.type} onChange={(e) => edit(i, { type: e.target.value })}>
+                  {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select></label>
+              <label className="field"><span className="field-label">Start time</span>
+                <input className="input" value={c.time || ""} onChange={(e) => edit(i, { time: e.target.value })} placeholder="10:30" /></label>
+              <label className="field"><span className="field-label">Time limit (minutes)</span>
+                <input className="input" inputMode="numeric" value={c.limit || ""} onChange={(e) => edit(i, { limit: e.target.value })} placeholder="60" /></label>
+              <label className="field"><span className="field-label">Venue</span>
+                <input className="input" value={c.venue || ""} onChange={(e) => edit(i, { venue: e.target.value })} placeholder="Main arena" /></label>
+              <label className="field"><span className="field-label">Short name (scoreboard)</span>
+                <input className="input" value={c.short || ""} onChange={(e) => edit(i, { short: e.target.value })} maxLength={12} /></label>
+              <label className="field"><span className="field-label">Note on the board</span>
+                <input className="input" value={c.metricNote || ""} onChange={(e) => edit(i, { metricNote: e.target.value })} /></label>
+            </div>
+
+            {isTime && (
+              <div className="cs-rule">
+                <span className="field-label">Points rule</span>
+                <div className="cs-radios">
+                  {[["rank", "By place"], ["penalty", "By place, minus points over the time limit"], ["countdown", "Start points, minus points for time taken"]].map(([k, l]) => (
+                    <label key={k} className={"cs-radio" + ((c.scoring || "rank") === k ? " on" : "")}>
+                      <input type="radio" name={"sc-" + c.key} checked={(c.scoring || "rank") === k} onChange={() => edit(i, { scoring: k })} />{l}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="cs-grid">
+              {!(isTime && c.scoring === "countdown") && (
+                <label className="field"><span className="field-label">{c.type === "winner" ? "Points for the winner" : "Points for 1st, 2nd, 3rd, 4th"}</span>
+                  <input className="input" value={c.pointsText} onChange={(e) => edit(i, { pointsText: e.target.value })} placeholder={c.type === "winner" ? "100" : "500, 300, 200, 100"} /></label>
+              )}
+              {isTime && c.scoring === "countdown" && (
+                <label className="field"><span className="field-label">Start points</span>
+                  <input className="input" inputMode="numeric" value={c.start || ""} onChange={(e) => edit(i, { start: e.target.value })} placeholder="1000" /></label>
+              )}
+              {isTime && c.scoring !== "rank" && c.scoring && (
+                <>
+                  <label className="field"><span className="field-label">Every ... minutes</span>
+                    <input className="input" inputMode="numeric" value={c.every || ""} onChange={(e) => edit(i, { every: e.target.value })} placeholder="10" /></label>
+                  <label className="field"><span className="field-label">... lose points</span>
+                    <input className="input" inputMode="numeric" value={c.lose || ""} onChange={(e) => edit(i, { lose: e.target.value })} placeholder="100" /></label>
+                </>
+              )}
+            </div>
+            {isTime && c.scoring && c.scoring !== "rank" && (
+              <p className="hint cs-example">{ruleExample(c)}</p>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="cs-bar">
+        <button className="btn btn-ghost" onClick={add}>+ Add challenge</button>
+        <button className="btn btn-ghost" onClick={reset}>Reset to original</button>
+        <span className="hint" style={{ marginLeft: "auto" }}>{dirty ? "Unsaved changes" : "All saved"}</span>
+        <button className="btn btn-ink" disabled={busy || !dirty} onClick={save}>{busy ? "Saving..." : "Save challenges"}</button>
+      </div>
+    </div>
+  );
+}
+
+function ruleExample(c) {
+  const every = Number(c.every) || 0, lose = Number(c.lose) || 0;
+  if (!every || !lose) return "Fill in both boxes to see an example.";
+  const pts = String(c.pointsText || "").split(/[,/ ]+/).map(Number).filter((n) => isFinite(n));
+  if (c.scoring === "countdown") {
+    const start = Number(c.start) || 0;
+    return "Example: a house finishing in 45 minutes gets " + start + " - " + Math.floor(45 / every) * lose + " = " + Math.max(0, start - Math.floor(45 / every) * lose) + " points (lose " + lose + " for every full " + every + " minutes).";
+  }
+  const limit = Number(c.limit) || 0;
+  const over = every * 2;
+  const lost = 2 * lose;
+  return "Example: limit " + limit + " min. A 1st-place house finishing in " + (limit + over) + " min is " + over + " min over, so gets " + (pts[0] || 0) + " - " + lost + " = " + Math.max(0, (pts[0] || 0) - lost) + " points. Finishing within the limit loses nothing.";
+}
+
+function Admin({ people, scores, totals, standings, bonus, health, settingsInfo, go, toast }) {
   const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_admin") === "1"; } catch (e) { return false; } });
   const [tab, setTab] = useState("overview");
   if (!ok) return <AdminLogin onOk={() => setOk(true)} />;
@@ -2127,7 +2363,7 @@ function Admin({ people, scores, totals, standings, bonus, health, go, toast }) 
         <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
       </div>
       <div className="tabs" role="tablist">
-        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["ledger", "Score ledger"], ["backup", "Backup & export"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["setup", "Challenges"], ["ledger", "Score ledger"], ["backup", "Backup & export"]].map(([k, label]) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -2137,6 +2373,7 @@ function Admin({ people, scores, totals, standings, bonus, health, go, toast }) 
       {tab === "email" && <EmailCenter people={people} toast={toast} />}
       {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
       {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
+      {tab === "setup" && <ChallengeSetup scores={scores} settingsInfo={settingsInfo} toast={toast} />}
       {tab === "backup" && <BackupPanel people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} toast={toast} />}
     </div>
   );
@@ -2202,6 +2439,19 @@ export default function App() {
 
   const [health, setHealth] = useState({ ok: true, checkedAt: null, lastOk: null, ms: 0, pending: db.pendingCount(), lastBackup: null });
   const latest = useRef({ people: [], scores: [] });
+  const [setVer, setSetVer] = useState(0);
+  const [settingsInfo, setSettingsInfo] = useState({ missing: false });
+  const lastSettings = useRef("");
+  const loadSettings = useCallback(() => {
+    db.loadSettings().then((st) => {
+      const sig = JSON.stringify(st);
+      setSettingsInfo({ missing: !!st._missing });
+      if (sig === lastSettings.current) return;
+      lastSettings.current = sig;
+      applySettings(st);
+      setSetVer((v) => v + 1);
+    }).catch(() => {});
+  }, []);
 
   const refresh = useCallback(() => {
     db.loadAll()
@@ -2239,9 +2489,10 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    refresh();
-    return db.subscribe(refresh);
-  }, [refresh]);
+    const both = () => { refresh(); loadSettings(); };
+    both();
+    return db.subscribe(both);
+  }, [refresh, loadSettings]);
 
   const toast = useCallback((text, tone) => {
     setToastMsg({ text, tone, id: Date.now() });
@@ -2259,27 +2510,23 @@ export default function App() {
       HOUSES.forEach((h) => (t[c.key][h.key] = c.type === "time" ? Infinity : 0));
     });
     scores.forEach((s) => {
+      if (!t[s.challenge] || t[s.challenge][s.house] === undefined) return; // removed challenge
       const c = challengeOf(s.challenge);
-      if (!t[s.challenge] || t[s.challenge][s.house] === undefined) return;
       if (c.type === "time") t[s.challenge][s.house] = Math.min(t[s.challenge][s.house], s.points);
       else t[s.challenge][s.house] += s.points;
     });
     return t;
-  }, [scores]);
+  }, [scores, setVer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bonus = useMemo(() => earlyBonus(people), [people]);
   const standings = useMemo(() => {
     const pts = {};
     HOUSES.forEach((h) => (pts[h.key] = { total: 0, per: {} }));
     CHALLENGES.forEach((c) => {
-      const rows = HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
-        .filter((r) => scored(c, r.v))
-        .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v));
       HOUSES.forEach((h) => (pts[h.key].per[c.key] = 0));
-      rows.forEach((r, i) => {
-        const p = ptsFor(c)[i] || 0;
-        pts[r.h.key].per[c.key] = p;
-        pts[r.h.key].total += p;
+      rankChallenge(c, totals).forEach((r) => {
+        pts[r.h.key].per[c.key] = r.pts;
+        pts[r.h.key].total += r.pts;
       });
     });
     HOUSES.forEach((h) => {
@@ -2288,7 +2535,7 @@ export default function App() {
       pts[h.key].total += b;
     });
     return pts;
-  }, [totals, bonus]);
+  }, [totals, bonus, setVer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { page, arg } = route;
   const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;
@@ -2303,7 +2550,7 @@ export default function App() {
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
   else if (page === "gift" && EVENT.hasGift) body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
-  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} go={go} toast={toast} />;
+  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} settingsInfo={settingsInfo} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
 
   return (
