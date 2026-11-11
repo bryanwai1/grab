@@ -846,14 +846,14 @@ function StatusRow({ person }) {
   );
 }
 
+const TEST_PERSON = { id: "test", token: "GRB-TEST00", name: "Test guest", department: "Test", email: "test@example.com", phone: "-", house: HOUSES[0].key, checkedInAt: null, giftClaimedAt: null };
+
 function Pass({ arg, people, go, toast }) {
   const [token, flag] = arg.split("~");
   const want = db.normToken(token);
   // Test emails use GRB-TEST00: show a sample pass instead of "not found".
   const isTest = want === "GRB-TEST00";
-  const inList = isTest
-    ? { id: "test", token: "GRB-TEST00", name: "Test guest", department: "Test", email: "test@example.com", phone: "-", house: HOUSES[0].key, checkedInAt: null, giftClaimedAt: null }
-    : people.find((p) => p.token === want);
+  const inList = isTest ? TEST_PERSON : people.find((p) => p.token === want);
   // Not in this device's list yet (slow phone, list still loading, just
   // registered): ask the database directly before saying "not found".
   const [direct, setDirect] = useState({ state: "idle", person: null });
