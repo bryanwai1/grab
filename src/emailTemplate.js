@@ -107,7 +107,7 @@ export function buildEmailHtml(o) {
       <div style="font:900 14px Arial,sans-serif;color:${DARK};padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid #cfdcd3">📋 YOUR REGISTRATION DETAILS</div>
       <table width="100%" cellpadding="0" cellspacing="0">
         ${detail("👤", "Full Name", esc(name))}
-        ${detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>${houseColour ? ` <span style="color:${MUTED}">(${esc(houseColour)})</span>` : ""}` : "")}
+        ${detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>` : "")}
         ${detail("🏆", "Challenge", esc(challenge))}
         ${detail("📅", "Date", esc(event.dateLong))}
         ${detail("🕗", "Time", esc(event.eventTime))}

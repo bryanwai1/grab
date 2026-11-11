@@ -39,10 +39,10 @@ export const EVENT = {
 // House names from Joanne. `colour` is the T-shirt colour; `key` is what the database stores
 // (Knights keep the old "green" key so existing RSVPs and the database check still work).
 export const HOUSES = [
-  { key: "blue", name: "Vikings", colour: "Blue", hex: "#0B7FD4" },
-  { key: "red", name: "Samurais", colour: "Red", hex: "#E8382F" },
-  { key: "green", name: "Knights", colour: "Purple", hex: "#7B3FBF" },
-  { key: "yellow", name: "Gladiators", colour: "Yellow", hex: "#E0A100" },
+  { key: "blue", name: "Blue Vikings", colour: "Blue", hex: "#0B7FD4" },
+  { key: "red", name: "Red Samurais", colour: "Red", hex: "#E8382F" },
+  { key: "green", name: "Purple Knights", colour: "Purple", hex: "#7B3FBF" },
+  { key: "yellow", name: "Yellow Gladiators", colour: "Yellow", hex: "#E0A100" },
 ];
 
 // Placeholder list - replace with the client's real departments.

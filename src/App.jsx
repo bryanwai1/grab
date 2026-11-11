@@ -114,7 +114,7 @@ function DressCode({ house }) {
   return (
     <div className="dress" style={h ? { "--h": h.hex } : null}>
       <div className="dress-t">Dress code</div>
-      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", h.colour.toLowerCase() + " (" + h.name + ")") : d}</li>)}</ul>
+      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", h.colour.toLowerCase()) : d}</li>)}</ul>
     </div>
   );
 }
@@ -774,7 +774,7 @@ function Rsvp({ go }) {
             {HOUSES.map((h) => (
               <button type="button" key={h.key} className="house-opt" aria-pressed={f.house === h.key}
                 style={{ "--h": h.hex }} onClick={() => set("house")(h.key)}>
-                <span className="house-swatch" /><span style={{ color: h.hex }}>{h.name}</span><small className="house-col">{h.colour}</small>
+                <span className="house-swatch" /><span style={{ color: h.hex }}>{h.name}</span>
               </button>
             ))}
           </div>
@@ -1253,7 +1253,6 @@ function WaitingBoard({ title }) {
         {HOUSES.map((h) => (
           <div key={h.key} className="wait-house" style={{ background: h.hex }}>
             <span className="wait-name">{h.name}</span>
-            <span className="wait-col">{h.colour}</span>
           </div>
         ))}
       </div>
@@ -1888,7 +1887,7 @@ function EmailCenter({ people, toast }) {
           <input className="input" style={{ flex: "1 1 180px" }} value={testName} onChange={(e) => setTestName(e.target.value)} placeholder="Name e.g. Michelle Khoo" />
           <select className="input" style={{ flex: "0 1 170px" }} value={testHouse} onChange={(e) => setTestHouse(e.target.value)}>
             <option value="">House...</option>
-            {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name} ({h.colour})</option>)}
+            {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name}</option>)}
           </select>
           <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="their@email.com" />
           <button className="btn btn-ghost" onClick={sendTest}>Send test</button>
@@ -2082,7 +2081,7 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
   const cupRows = cup.map((r, i) => [i + 1, r.h.name, r.h.colour].concat(CHALLENGES.map((c) => r.s.per[c.key] || 0), [r.s.per.bonus || 0, r.s.total]));
   add("Winners", [
     [EVENT.name + " - results"], ["Exported", myStamp(new Date().toISOString()) + " (MYT)"],
-    ["House Cup champion", cup[0] && cup[0].s.total > 0 ? cup[0].h.name + " (" + cup[0].h.colour + ") - " + cup[0].s.total + " pts" : "No points yet"],
+    ["House Cup champion", cup[0] && cup[0].s.total > 0 ? cup[0].h.name + " - " + cup[0].s.total + " pts" : "No points yet"],
     ["RSVP'd", people.length], ["Checked in", inCount], ["Not checked in", people.length - inCount],
     [], ["HOUSE CUP STANDINGS"], head,
   ].concat(cupRows), [8, 16, 10].concat(CHALLENGES.map(() => 16), [18, 10]));
