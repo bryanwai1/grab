@@ -1030,3 +1030,4 @@ a.btn { text-decoration: none; }
 .rot-bar { height: 5px; background: #3ee87f; transform-origin: left; animation: rotfill linear forwards; }
 .rot-next { position: absolute; right: 70px; bottom: 12px; font-size: 13px; font-weight: 700; color: rgba(255,255,255,.55); }
 @keyframes rotfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cs-check { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }

@@ -35,7 +35,8 @@ export default async function handler(req, res) {
       headers: { Authorization: "Bearer " + RESEND_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: FROM_EMAIL, to: [to],
-        subject: subject || "Grab MY Hari Sukan 2026 - Your Check-In QR Code and Event Details",
+        // Joanne's subject. An old cached admin page may still send the previous "You're in - ..." subject; replace it.
+        subject: subject && !/^You're in/i.test(subject) ? subject : "Grab MY Hari Sukan 2026 - Your Check-In QR Code and Event Details",
         html,
       }),
     });

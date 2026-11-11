@@ -16,7 +16,8 @@ function fmtTime(cs) {
 }
 
 function parseTime(str) {
-  const parts = String(str).trim().split(":").map((x) => x.trim());
+  let parts = String(str).trim().split(":").map((x) => x.trim());
+  if (parts.length === 2) parts = parts.concat(["0"]); // M:SS
   if (parts.length !== 3 || parts.some((x) => x === "" || Number.isNaN(Number(x)))) return null;
   const [m, sec, c] = parts.map(Number);
   if (sec > 59 || c > 99 || m < 0 || sec < 0 || c < 0) return null;
@@ -42,6 +43,7 @@ function deduction(c, cs) {
   if (c.scoring === "countdown") return Math.floor(mins / every) * lose;
   return 0;
 }
+const overLimit = (c, cs) => c.type === "time" && Number(c.limit) > 0 && isFinite(cs) && cs / 6000 > Number(c.limit);
 // Ranked results with the points each house earns: [{ h, v, rank, pts, lost }]
 function rankChallenge(c, totals) {
   const col = totals[c.key] || {};
@@ -49,15 +51,16 @@ function rankChallenge(c, totals) {
     .filter((r) => r.v !== undefined && scored(c, r.v))
     .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
     .map((r, i) => {
-      const lost = deduction(c, r.v);
       const base = c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
+      if (c.scoring === "countdown" && c.zeroOver && overLimit(c, r.v)) return { ...r, rank: i + 1, lost: base, pts: 0, late: true };
+      const lost = deduction(c, r.v);
       return { ...r, rank: i + 1, lost, pts: Math.max(0, base - lost) };
     });
 }
 function ruleText(c) {
   const pts = ptsFor(c);
   if (c.type === "winner") return "Winner +" + pts[0];
-  if (c.type === "time" && c.scoring === "countdown") return "Start " + (c.start || 0) + " pts, -" + c.lose + " every " + c.every + " min";
+  if (c.type === "time" && c.scoring === "countdown") return (c.start || 0) + " pts, -" + c.lose + " per " + (Number(c.every) === 1 ? "minute" : c.every + " min") + (c.zeroOver && c.limit ? ", 0 if over " + c.limit + " min" : "");
   let t = pts.join(" / ");
   if (c.type === "time" && c.scoring === "penalty") t += ", -" + c.lose + " every " + c.every + " min over " + (c.limit || 0) + " min";
   return t;
@@ -72,6 +75,7 @@ function cleanChallenge(c) {
     metricNote: c.metricNote || (type === "time" ? "Fastest time wins" : type === "winner" ? "Winning house" : "Highest score wins"),
     venue: c.venue || "", time: c.time || "", blurb: c.blurb || "",
     scoring: type === "time" && ["penalty", "countdown"].includes(c.scoring) ? c.scoring : "rank",
+    zeroOver: !!c.zeroOver,
   };
 }
 function applySettings(st) {
@@ -1725,7 +1729,10 @@ const TPL_PRESETS = {
   },
 };
 function loadTpl() {
-  try { const t = JSON.parse(localStorage.getItem(TPL_KEY)); if (t && t.subject != null) return t; } catch (e) { /* ignore */ }
+  try {
+    const t = JSON.parse(localStorage.getItem(TPL_KEY));
+    if (t && t.subject != null) return /^You're in/i.test(t.subject) ? { ...t, subject: TPL_PRESETS.confirm.subject } : t;
+  } catch (e) { /* ignore */ }
   return { subject: TPL_PRESETS.confirm.subject, message: TPL_PRESETS.confirm.message };
 }
 
@@ -1913,7 +1920,7 @@ function ScoreEntry({ totals, toast }) {
       n = 1;
     } else if (isTime) {
       n = parseTime(points);
-      if (n === null) return setErr("Use M:SS:CC, for example 4:50:10");
+      if (n === null) return setErr("Use minutes:seconds, e.g. 45:30 (or 4:50:10 with hundredths)");
     } else {
       n = Number(points);
       if (!points.trim() || Number.isNaN(n)) return setErr("Enter a number.");
@@ -1962,8 +1969,8 @@ function ScoreEntry({ totals, toast }) {
           <span className="field-label">{c.metricNote}</span>
           <input className="input" inputMode={isTime ? "text" : "numeric"} value={points}
             onChange={(e) => { setPoints(e.target.value); if (err) setErr(""); }}
-            placeholder={isTime ? "4:50:10" : "Negative numbers deduct"} />
-          {isTime && <p className="hint">Minutes : seconds : hundredths. The fastest time a house logs is the one that counts.</p>}
+            placeholder={isTime ? "45:30" : "Negative numbers deduct"} />
+          {isTime && <p className="hint">Minutes : seconds (e.g. 45:30 or 75:00 for 1h15). Hundredths optional (4:50:10). The fastest time a house logs is the one that counts.</p>}
         </label>}
         <label className="field">
           <span className="field-label">Note</span>
@@ -2290,9 +2297,9 @@ function ChallengeSetup({ scores, settingsInfo, toast }) {
               <div className="cs-rule">
                 <span className="field-label">Points rule</span>
                 <div className="cs-radios">
-                  {[["rank", "By place"], ["penalty", "By place, minus points over the time limit"], ["countdown", "Start points, minus points for time taken"]].map(([k, l]) => (
+                  {[["countdown", "Points minus time taken"], ["rank", "By place (500 / 300 / 200 / 100)"], ["penalty", "By place, minus points over the time limit"]].map(([k, l]) => (
                     <label key={k} className={"cs-radio" + ((c.scoring || "rank") === k ? " on" : "")}>
-                      <input type="radio" name={"sc-" + c.key} checked={(c.scoring || "rank") === k} onChange={() => edit(i, { scoring: k })} />{l}
+                      <input type="radio" name={"sc-" + c.key} checked={(c.scoring || "rank") === k} onChange={() => edit(i, { scoring: k, ...(k === "countdown" ? { every: c.every || 1, start: c.start || 1000, lose: c.lose || 10 } : {}) })} />{l}
                     </label>
                   ))}
                 </div>
@@ -2305,18 +2312,22 @@ function ChallengeSetup({ scores, settingsInfo, toast }) {
                   <input className="input" value={c.pointsText} onChange={(e) => edit(i, { pointsText: e.target.value })} placeholder={c.type === "winner" ? "100" : "500, 300, 200, 100"} /></label>
               )}
               {isTime && c.scoring === "countdown" && (
-                <label className="field"><span className="field-label">Start points</span>
+                <label className="field"><span className="field-label">Points for this challenge</span>
                   <input className="input" inputMode="numeric" value={c.start || ""} onChange={(e) => edit(i, { start: e.target.value })} placeholder="1000" /></label>
               )}
               {isTime && c.scoring !== "rank" && c.scoring && (
                 <>
-                  <label className="field"><span className="field-label">Every ... minutes</span>
-                    <input className="input" inputMode="numeric" value={c.every || ""} onChange={(e) => edit(i, { every: e.target.value })} placeholder="10" /></label>
-                  <label className="field"><span className="field-label">... lose points</span>
-                    <input className="input" inputMode="numeric" value={c.lose || ""} onChange={(e) => edit(i, { lose: e.target.value })} placeholder="100" /></label>
+                  <label className="field"><span className="field-label">Points lost...</span>
+                    <input className="input" inputMode="numeric" value={c.lose || ""} onChange={(e) => edit(i, { lose: e.target.value })} placeholder="10" /></label>
+                  <label className="field"><span className="field-label">...for every (minutes)</span>
+                    <input className="input" inputMode="numeric" value={c.every || ""} onChange={(e) => edit(i, { every: e.target.value })} placeholder="1" /></label>
                 </>
               )}
             </div>
+            {isTime && c.scoring === "countdown" && (
+              <label className="cs-check"><input type="checkbox" checked={!!c.zeroOver} onChange={(e) => edit(i, { zeroOver: e.target.checked })} />
+                Zero points if a house goes over the time limit{c.limit ? " (" + c.limit + " min)" : " - set a time limit above"}</label>
+            )}
             {isTime && c.scoring && c.scoring !== "rank" && (
               <p className="hint cs-example">{ruleExample(c)}</p>
             )}
@@ -2340,7 +2351,11 @@ function ruleExample(c) {
   const pts = String(c.pointsText || "").split(/[,/ ]+/).map(Number).filter((n) => isFinite(n));
   if (c.scoring === "countdown") {
     const start = Number(c.start) || 0;
-    return "Example: a house finishing in 45 minutes gets " + start + " - " + Math.floor(45 / every) * lose + " = " + Math.max(0, start - Math.floor(45 / every) * lose) + " points (lose " + lose + " for every full " + every + " minutes).";
+    const ex = (m) => Math.max(0, start - Math.floor(m / every) * lose);
+    const limit = Number(c.limit) || 0;
+    let t = "Examples: finish in 10 min = " + start + " - " + Math.floor(10 / every) * lose + " = " + ex(10) + " pts.  Finish in 30 min = " + ex(30) + " pts.";
+    if (limit) t += c.zeroOver ? "  Over " + limit + " min = 0 pts." : "  At the " + limit + " min limit = " + ex(limit) + " pts.";
+    return t + " Points never go below 0.";
   }
   const limit = Number(c.limit) || 0;
   const over = every * 2;
