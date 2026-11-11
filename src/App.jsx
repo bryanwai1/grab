@@ -849,7 +849,11 @@ function StatusRow({ person }) {
 function Pass({ arg, people, go, toast }) {
   const [token, flag] = arg.split("~");
   const want = db.normToken(token);
-  const inList = people.find((p) => p.token === want);
+  // Test emails use GRB-TEST00: show a sample pass instead of "not found".
+  const isTest = want === "GRB-TEST00";
+  const inList = isTest
+    ? { id: "test", token: "GRB-TEST00", name: "Test guest", department: "Test", email: "test@example.com", phone: "-", house: HOUSES[0].key, checkedInAt: null, giftClaimedAt: null }
+    : people.find((p) => p.token === want);
   // Not in this device's list yet (slow phone, list still loading, just
   // registered): ask the database directly before saying "not found".
   const [direct, setDirect] = useState({ state: "idle", person: null });
@@ -879,6 +883,7 @@ function Pass({ arg, people, go, toast }) {
 
   return (
     <div className="shell section" style={{ maxWidth: 640 }}>
+      {isTest && <div className="banner">This is a sample pass from a TEST email. Real guests see their own name, house and QR here. This code cannot be used to check in.</div>}
       {flag === "new" && <div className="banner banner-ok">You're in, {person.name.split(" ")[0]}! Save this pass - a copy is on its way to {person.email}.</div>}
       {flag === "dup" && <div className="banner">This email has already RSVP'd. Here is the existing pass.</div>}
       <div className="trip pass-card">
