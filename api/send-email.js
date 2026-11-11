@@ -3,7 +3,7 @@
 // confirmation) and by the admin Email tab (custom subject + message template).
 // Needs RESEND_KEY (and optionally FROM_EMAIL) in Vercel env vars.
 import { buildEmailHtml } from "../src/emailTemplate.js";
-import { HOUSES } from "../src/config.js";
+import { HOUSES, SITE_URL, ITINERARY_PDF } from "../src/config.js";
 
 const RESEND_KEY = process.env.RESEND_KEY;
 // Sender on the verified domain used for Koerber (smartsl-events.com). FROM_EMAIL in Vercel overrides it.
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!RESEND_KEY) return res.status(200).json({ ok: false, skipped: true, error: "RESEND_KEY not set in Vercel" });
 
-  const { to, name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, subject, message, event = {} } = req.body || {};
+  const { to, name, token, house, houseHex, houseColour, challenge, subject, message, event = {} } = req.body || {};
   if (!to || !name || !token) return res.status(400).json({ ok: false, error: "Missing fields" });
 
   // Second safety check on the server: refuse anything that would show wrong info.
@@ -23,11 +23,17 @@ export default async function handler(req, res) {
   const h = HOUSES.find((x) => x.name === house);
   if (!h) problems.push("unknown house");
   else if ((houseColour && houseColour !== h.colour) || (houseHex && houseHex.toLowerCase() !== h.hex.toLowerCase())) problems.push("house colour mismatch");
-  if (passUrl && !String(passUrl).includes(token)) problems.push("pass link does not match the pass code");
   if (/\{\w+\}/.test(String(subject || "") + String(message || ""))) problems.push("unfilled template fields");
   if (problems.length) return res.status(400).json({ ok: false, error: "Not sent: " + problems.join("; ") });
 
-  const html = buildEmailHtml({ name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, message, event });
+  // Always link to the public site. Links built on a Vercel preview address
+  // open a Vercel login page for guests, so they are rebuilt here.
+  const html = buildEmailHtml({
+    name, token, house, houseHex, houseColour, challenge, message, event,
+    passUrl: SITE_URL + "/#/pass/" + token,
+    agendaUrl: SITE_URL + "/" + ITINERARY_PDF,
+    logoUrl: SITE_URL + "/hari-sukan-logo.png",
+  });
 
   try {
     const r = await fetch("https://api.resend.com/emails", {

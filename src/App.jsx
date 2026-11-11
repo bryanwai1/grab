@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { buildEmailHtml } from "./emailTemplate";
-import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN } from "./config";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN, SITE_URL } from "./config";
 import * as db from "./store";
 
 /* ================= helpers ================= */
@@ -119,7 +119,10 @@ function DressCode({ house }) {
   );
 }
 const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(EVENT.venue + ", " + EVENT.address);
-const passUrl = (token) => window.location.origin + window.location.pathname + "#/pass/" + token;
+// Links that go into emails always use the public site, not the address the admin is on.
+const passUrl = (token) => SITE_URL + "/#/pass/" + token;
+const mailPdfUrl = () => SITE_URL + "/" + ITINERARY_PDF;
+const mailLogoUrl = () => SITE_URL + "/hari-sukan-logo.png";
 
 // Template placeholders the admin can use in the email subject and message.
 const EMAIL_FIELDS = ["name", "house", "colour", "department", "code", "date", "venue", "address", "doors", "link"];
@@ -166,7 +169,7 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: (to || person.email).trim(), name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
-        passUrl: passUrl(person.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + (process.env.PUBLIC_URL || "") + "/hari-sukan-logo.png",
+        passUrl: passUrl(person.token), agendaUrl: mailPdfUrl(), logoUrl: mailLogoUrl(),
         subject: subj, message: msg, event: EVENT,
       }),
     });
@@ -1739,7 +1742,7 @@ function EmailPreview({ person, subject, message }) {
   const h = houseOf(person.house);
   const html = buildEmailHtml({
     name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour,
-    passUrl: passUrl(person.token), agendaUrl: pdfUrl(), logoUrl: window.location.origin + BADGE,
+    passUrl: passUrl(person.token), agendaUrl: mailPdfUrl(), logoUrl: mailLogoUrl(),
     message: fillTemplate(message, person), event: EVENT,
   });
   return (

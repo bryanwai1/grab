@@ -1,5 +1,9 @@
 // Event settings. Edit this file to rebrand the site for another event.
 
+// Public address used for every link inside emails (pass, agenda, logo).
+// Never a Vercel preview address - those ask for a Vercel login.
+export const SITE_URL = ((typeof process !== "undefined" && process.env && (process.env.REACT_APP_SITE_URL || process.env.SITE_URL)) || "https://grab-day.vercel.app").replace(/\/+$/, "");
+
 export const EVENT = {
   name: "Grab MY Hari Sukan",
   year: "2026",
