@@ -34,6 +34,7 @@ const toPerson = (r) => ({
   phone: r.phone, house: r.house, createdAt: r.created_at,
   checkedInAt: r.checked_in_at, giftClaimedAt: r.gift_claimed_at,
   emailSentAt: r.email_sent_at || null,
+  nominated: r.nominated || "",
 });
 const toScore = (r) => ({
   id: r.id, challenge: r.challenge, house: r.house, points: Number(r.points),
@@ -306,7 +307,7 @@ export async function updatePerson(id, patch) {
     writeDb(db);
     return;
   }
-  const map = { checkedInAt: "checked_in_at", giftClaimedAt: "gift_claimed_at", emailSentAt: "email_sent_at" };
+  const map = { checkedInAt: "checked_in_at", giftClaimedAt: "gift_claimed_at", emailSentAt: "email_sent_at", nominated: "nominated" };
   const body = {};
   Object.keys(patch).forEach((k) => (body[map[k] || k] = patch[k]));
   const { error } = await supa.from("grab_people").update(body).eq("id", id);
@@ -393,4 +394,51 @@ export async function saveSetting(key, value) {
     e.missingTable = /grab_settings|relation|schema cache/i.test(error.message || "");
     throw e;
   }
+}
+
+/* ---------------- bulk import (name list from Grab) ---------------- */
+// rows: [{ name, email, department, phone, house, nominated }]
+// New emails are added with a fresh pass code. Existing emails are UPDATED
+// (name, department, phone, house, nominated) and keep their pass code,
+// check-in and lunch status. Returns { added, updated, failed: [{ email, error }] }.
+export const IMPORT_SQL = `alter table grab_people add column if not exists nominated text;
+alter table grab_people drop constraint if exists grab_people_house_check;
+alter table grab_people add constraint grab_people_house_check
+  check (house in ('blue','red','green','yellow','spectator'));`;
+
+export async function importPeople(rows, onProgress = () => {}) {
+  const out = { added: 0, updated: 0, failed: [] };
+  const existing = {};
+  (await loadAll()).people.forEach((p) => (existing[p.email] = p));
+  let done = 0;
+  for (const r of rows) {
+    const email = normEmail(r.email);
+    const fields = { name: String(r.name).trim(), department: String(r.department || "").trim() || "-", phone: String(r.phone || "").trim(), house: r.house, nominated: String(r.nominated || "").trim() };
+    try {
+      const ex = existing[email];
+      if (!supa) {
+        const db = readDb();
+        const row = db.people.find((x) => x.email === email);
+        if (row) { Object.assign(row, fields); out.updated++; }
+        else { db.people.push({ ...fields, email, id: "l-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), token: newToken(), createdAt: now(), checkedInAt: null, giftClaimedAt: null }); out.added++; }
+        writeDb(db);
+      } else if (ex) {
+        const { error } = await supa.from("grab_people").update(fields).eq("id", ex.id);
+        if (error) throw error;
+        out.updated++;
+      } else {
+        let error = null;
+        for (let tries = 0; tries < 3; tries++) { // retry on the (rare) duplicate pass code
+          ({ error } = await supa.from("grab_people").insert({ ...fields, email, token: newToken() }));
+          if (!error || !/token/i.test(error.message || "")) break;
+        }
+        if (error) throw error;
+        out.added++;
+      }
+    } catch (e) {
+      out.failed.push({ email, error: String((e && e.message) || e) });
+    }
+    onProgress(++done, rows.length);
+  }
+  return out;
 }

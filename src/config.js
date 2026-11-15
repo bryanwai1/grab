@@ -14,16 +14,22 @@ export const EVENT = {
   doorsOpen: "08:00",
   registration: "8.00am (sharp)",
   // Shown as a "Dress code" box in the email, on the pass and on the agenda.
+  // "your house colour" is replaced with the guest's colour (e.g. "red").
   dressCode: [
     "Hari Sukan T-shirt in your house colour",
     "Comfortable sportswear",
-    "Sports shoes for the activities",
+    "Sports shoes",
   ],
-  // Shown in the confirmation email (design from Joanne).
+  spectatorDressCode: [
+    "Comfortable activewear",
+    "Sports shoes recommended",
+  ],
+  // Email wording from Joanne's "Participant QR Email Template" and "Spectator Email Draft".
   eventTime: "8.00am - 4.00pm",
   counterTime: "8.00am - 8.30am",
+  qrNote: "Save a **screenshot of your QR code** in your phone and show it to our event crew at the **lobby registration counter** during check-in on the event day.",
   obstacleRemark: "For participants joining the Obstacle Challenge, it is recommended to wear **long pants** and bring **1 set of clean clothes**.",
-  parkingNote: "Parking space is limited. Carpool and Grab car is recommended.",
+  parkingNote: "Parking space is limited. You are recommended to carpool or share Grab rides.",
   // Weekday parking rates only (event is on a Friday).
   parkingRates: [
     ["First 15 minutes", "Free"],
@@ -31,17 +37,50 @@ export const EVENT = {
     ["Every subsequent hour and part thereof", "RM1.50"],
     ["7.00pm - 6.01am (per entry)", "RM3.00"],
   ],
-  storageNote: "We reserve a space for storage of bag, however the space is not locked. We highly recommend bringing your personal belongings with you. Any missing item we are not responsible for it.",
-  emailItinerary: [["8:00 AM", "Breakfast"], ["8:30 AM", "Registration Counter Close"], ["8:45 AM", "Gather at Lobby for March In"], ["9:00 AM", "Opening Ceremony Start"]],
+  storageNote: "A designated space is available for bag storage; however, it is not locked or secured. We strongly recommend keeping your personal belongings with you. Please note that we are not responsible for any lost or missing items.",
+  // [time, item]. The lunch row gets the activities list below it.
+  emailItinerary: [
+    ["8:00 AM", "Breakfast"],
+    ["8:30 AM", "Registration Counter Close"],
+    ["8:45 AM", "Gather at Lobby for March In"],
+    ["9:00 AM", "Opening Ceremony Start"],
+    ["10:30 AM", "Official Flag-Off & Competition Begins"],
+    ["12:30 PM", "Lunch Break & Friday Prayers"],
+    ["2:30 PM", "Let the Battle Begin! Team War Cry & Tug of War"],
+    ["3:30 PM", "Award Ceremony"],
+    ["4:00 PM", "End of event"],
+  ],
+  spectatorItinerary: [
+    ["8:00 AM", "Breakfast"],
+    ["8:30 AM", "Registration Cutoff"],
+    ["8:45 AM", "Spectators to Be Seated at Stadium Seating Area for Opening Ceremony"],
+    ["9:00 AM", "Opening Ceremony Start"],
+    ["10:00 AM", "Official Flag-Off & Competition Begins"], // Joanne's spectator draft says 10.00am; participant one says 10.30am
+    ["12:30 PM", "Lunch Break & Friday Prayers"],
+    ["2:30 PM", "Let the Battle Begin! Team War Cry & Tug of War"],
+    ["3:30 PM", "Award Ceremony"],
+    ["4:00 PM", "End of event"],
+  ],
+  lunchRow: "Lunch Break & Friday Prayers",
+  lunchActivities: [
+    ["📸 Strike a Pose! – Photobooth", "12.00 PM – 2.30 PM"],
+    ["🎯 Take on the Mini Station Challenge!", "12.30 PM – 2.30 PM"],
+    ["💆 Relax & Recharge – Massage Station", "12.45 PM – 2.15 PM"],
+    ["💪 Know Your Body Better – BMI Check by Celebrity Fitness", "12.00 PM – 2.30 PM"],
+  ],
   bonus: "Teams with full attendance before **8:30 AM** will earn an additional",
   bonusPoints: "300 points.",
-  gift: "Door gift",
-  // No door gift this year: hides the gift counter, gift status and gift wording everywhere.
-  hasGift: false,
+  // Lunch redemption (works like the door gift at Soilbuild): staff scan the QR at the
+  // food counter. Must be checked in first; one lunch per pass.
+  gift: "Lunch",
+  hasGift: true,
 };
 
 // House names from Joanne. `colour` is the T-shirt colour; `key` is what the database stores
 // (Knights keep the old "green" key so existing RSVPs and the database check still work).
+// Spectators: attend, eat, but take part in no activity and earn no points.
+export const SPECTATOR = { key: "spectator", name: "Spectator", colour: "", hex: "#0B5D35" };
+
 export const HOUSES = [
   { key: "blue", name: "Blue Vikings", colour: "Blue", hex: "#0B7FD4" },
   { key: "red", name: "Red Samurais", colour: "Red", hex: "#E8382F" },

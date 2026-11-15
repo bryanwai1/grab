@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { buildEmailHtml } from "./emailTemplate";
-import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN, SITE_URL } from "./config";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN, SITE_URL, SPECTATOR } from "./config";
 import * as db from "./store";
 
 /* ================= helpers ================= */
@@ -102,7 +102,9 @@ function earlyBonus(people) {
   });
   return out;
 }
-const houseOf = (k) => HOUSES.find((h) => h.key === k) || HOUSES[0];
+const houseOf = (k) => (k === SPECTATOR.key ? SPECTATOR : HOUSES.find((h) => h.key === k) || HOUSES[0]);
+const isSpec = (p) => !!p && p.house === SPECTATOR.key;
+const teamLabel = (h) => (h.key === SPECTATOR.key ? "Spectator" : "House " + h.name);
 const challengeOf = (k) => CHALLENGES.find((c) => c.key === k) || CHALLENGES[0];
 const BG = (n) => ({ backgroundImage: "url(" + (process.env.PUBLIC_URL || "") + "/" + n + ")" });
 const calmMotion = () =>
@@ -114,14 +116,13 @@ function DressCode({ house }) {
   return (
     <div className="dress" style={h ? { "--h": h.hex } : null}>
       <div className="dress-t">Dress code</div>
-      <ul>{EVENT.dressCode.map((d, i) => <li key={i}>{h && i === 0 ? d.replace("your house colour", h.colour.toLowerCase()) : d}</li>)}</ul>
+      <ul>{(h && h.key === SPECTATOR.key ? EVENT.spectatorDressCode : EVENT.dressCode).map((d, i) => <li key={i}>{h && h.colour && i === 0 ? d.replace("your house colour", h.colour.toLowerCase()) : d}</li>)}</ul>
     </div>
   );
 }
 const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(EVENT.venue + ", " + EVENT.address);
 // Links that go into emails always use the public site, not the address the admin is on.
 const passUrl = (token) => SITE_URL + "/#/pass/" + token;
-const mailPdfUrl = () => SITE_URL + "/" + ITINERARY_PDF;
 const mailLogoUrl = () => SITE_URL + "/hari-sukan-logo.png";
 
 // Template placeholders the admin can use in the email subject and message.
@@ -139,7 +140,7 @@ function emailProblems(p, to, subject, message) {
   const out = [];
   if (!p || !String(p.name || "").trim()) out.push("name is missing");
   if (!EMAIL_RE.test(String(to || "").trim())) out.push("email address looks wrong (" + (to || "empty") + ")");
-  if (!p || !HOUSES.some((h) => h.key === p.house)) out.push("house is missing or unknown");
+  if (!p || !(HOUSES.some((h) => h.key === p.house) || p.house === SPECTATOR.key)) out.push("house is missing or unknown");
   if (!p || !TOKEN_RE.test(String(p.token || ""))) out.push("pass code is invalid");
   const left = (String(subject || "") + " " + String(message || "")).match(/\{\w+\}/g);
   if (left) out.push("template has unfilled fields " + Array.from(new Set(left)).join(" "));
@@ -149,13 +150,13 @@ function emailProblems(p, to, subject, message) {
 // Before every send: re-read the guest from the database and send ONLY what
 // is stored there, so a stale list or a mix-up can never put someone else's
 // name, house or QR in the email. Test sends (to = override) skip the lookup.
-async function sendPassEmail(p, { subject, message, to } = {}) {
+async function sendPassEmail(p, { subject, message, to, cc } = {}) {
   let person = p;
   if (!to) {
     let fresh = null;
     try { fresh = await db.findByToken(p.token); } catch (e) { return { ok: false, error: "Couldn't verify with the database - not sent" }; }
     if (!fresh || fresh.id !== p.id) return { ok: false, error: "Pass code doesn't match the database record - not sent" };
-    if (String(fresh.email).toLowerCase() !== String(p.email).toLowerCase() || fresh.name !== p.name || fresh.house !== p.house)
+    if (String(fresh.email).toLowerCase() !== String(p.email).toLowerCase() || fresh.name !== p.name || fresh.house !== p.house || (fresh.nominated || "") !== (p.nominated || ""))
       return { ok: false, error: "Details changed since the list loaded - refresh and send again" };
     person = fresh;
   }
@@ -168,8 +169,8 @@ async function sendPassEmail(p, { subject, message, to } = {}) {
     const r = await fetch("/api/send-email", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: (to || person.email).trim(), name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
-        passUrl: passUrl(person.token), agendaUrl: mailPdfUrl(), logoUrl: mailLogoUrl(),
+        to: (to || person.email).trim(), cc: cc || undefined, name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
+        challenge: person.nominated || "", spectator: isSpec(person),
         subject: subj, message: msg, event: EVENT,
       }),
     });
@@ -420,7 +421,7 @@ async function downloadPass(person) {
   x.fillStyle = h.hex; x.fillRect(0, 0, W, 250);
   x.fillStyle = "#fff";
   x.font = "600 34px Archivo, Arial, sans-serif"; x.fillText(EVENT.name.toUpperCase() + " " + EVENT.year, 60, 90);
-  x.font = "800 86px Archivo, Arial, sans-serif"; x.fillText("House " + h.name, 60, 195);
+  x.font = "800 86px Archivo, Arial, sans-serif"; x.fillText(teamLabel(h), 60, 195);
   x.drawImage(img, 130, 310, 640, 640);
   x.fillStyle = "#06180e"; x.textAlign = "center";
   x.font = "800 52px Archivo, Arial, sans-serif"; x.fillText(person.name, W / 2, 1040, W - 80);
@@ -436,6 +437,7 @@ async function downloadPass(person) {
 
 /* ================= slide to claim ================= */
 
+// eslint-disable-next-line no-unused-vars -- kept for a future self-claim item
 function SlideToClaim({ label = "Slide to claim", onComplete, disabled }) {
   const track = useRef(null);
   const [x, setX] = useState(0);
@@ -739,13 +741,13 @@ function Rsvp({ go }) {
     if (!f.name.trim()) return setErr("Enter your full name.");
     if (!f.department) return setErr("Select your department.");
     if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) return setErr("Enter a valid email.");
-    if (!f.house) return setErr("Select your house.");
+    if (!f.house) return setErr("Select your house, or Spectator.");
     if (f.phone.replace(/\D/g, "").length < 8) return setErr("Enter a valid phone number.");
     setBusy(true);
     try {
       const { person, duplicate } = await db.register(f);
       if (!duplicate) {
-        sendPassEmail(person).then((r) => { if (r.ok) db.updatePerson(person.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); });
+        sendPassEmail(person, isSpec(person) ? { message: TPL_PRESETS.confirm.spectatorMessage } : {}).then((r) => { if (r.ok) db.updatePerson(person.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); });
       }
       try { localStorage.setItem("grab_my_pass", person.token); } catch (x) { /* ignore */ }
       go("pass", person.token + (duplicate ? "~dup" : "~new"));
@@ -780,6 +782,10 @@ function Rsvp({ go }) {
                 <span className="house-swatch" /><span style={{ color: h.hex }}>{h.name}</span>
               </button>
             ))}
+            <button type="button" className="house-opt" aria-pressed={f.house === SPECTATOR.key}
+              style={{ "--h": SPECTATOR.hex }} onClick={() => set("house")(SPECTATOR.key)}>
+              <span className="house-swatch" /><span>Spectator <small style={{ fontWeight: 500, opacity: 0.75 }}>(watching only)</small></span>
+            </button>
           </div>
         </div>
         <label className="field"><span className="field-label">Phone number</span>
@@ -840,7 +846,7 @@ function StatusRow({ person }) {
         {person.checkedInAt ? "Checked in " + clock(person.checkedInAt) : "Not checked in"}
       </span>
       {EVENT.hasGift && <span className={"status" + (person.giftClaimedAt ? " status-gift" : "")}>
-        {person.giftClaimedAt ? "Gift claimed " + clock(person.giftClaimedAt) : "Gift not claimed"}
+        {person.giftClaimedAt ? EVENT.gift + " collected " + clock(person.giftClaimedAt) : EVENT.gift + " not collected"}
       </span>}
     </div>
   );
@@ -874,12 +880,6 @@ function Pass({ arg, people, go, toast }) {
   if (!person) return <FindPass go={go} note={"Pass code " + want + " was not found. Use your RSVP email below."} />;
   const h = houseOf(person.house);
 
-  const claim = async () => {
-    const r = await db.claimGift(person.token);
-    if (r.ok) toast("Door gift claimed. Enjoy!", "ok");
-    else if (r.already) toast("This pass has already claimed its gift.", "bad");
-    else if (r.notCheckedIn) toast("Check in at the lobby first.", "bad");
-  };
 
   return (
     <div className="shell section" style={{ maxWidth: 640 }}>
@@ -890,7 +890,7 @@ function Pass({ arg, people, go, toast }) {
         <div className="trip-band" style={{ background: h.hex }}>
           <div>
             <div style={{ fontSize: 13, opacity: 0.9 }}>{EVENT.name} {EVENT.year}</div>
-            <div className="wide" style={{ fontSize: 33, fontWeight: 700 }}>House {h.name}</div>
+            <div className="wide" style={{ fontSize: 33, fontWeight: 700 }}>{teamLabel(h)}</div>
           </div>
           <Logo white height={26} />
         </div>
@@ -911,14 +911,9 @@ function Pass({ arg, people, go, toast }) {
           {EVENT.hasGift && <div className="gift-box">
             <strong>{EVENT.gift}</strong>
             {person.giftClaimedAt ? (
-              <div className="claimed-stamp">CLAIMED <span>{stamp(person.giftClaimedAt)}</span></div>
-            ) : person.checkedInAt ? (
-              <>
-                <p className="hint" style={{ margin: "6px 0 14px" }}>Only slide in front of the gift counter staff. One gift per pass - this cannot be undone.</p>
-                <SlideToClaim label="Slide to claim gift" onComplete={claim} />
-              </>
+              <div className="claimed-stamp">COLLECTED <span>{stamp(person.giftClaimedAt)}</span></div>
             ) : (
-              <p className="hint" style={{ marginTop: 6 }}>Unlocks after you check in at the lobby desk.</p>
+              <p className="hint" style={{ marginTop: 6 }}>{person.checkedInAt ? "Show this QR at the " + EVENT.gift.toLowerCase() + " counter. One per pass." : "Check in at the lobby first, then show this QR at the " + EVENT.gift.toLowerCase() + " counter."}</p>
             )}
           </div>}
 
@@ -975,7 +970,7 @@ function StaffHome({ go, people }) {
         </button>
         {EVENT.hasGift && <button className="station station-gift" onClick={() => go("gift")}>
           <span className="station-n num">{gifts}<small>/{checked}</small></span>
-          <span className="station-t">Gift counter</span>
+          <span className="station-t">{EVENT.gift} counter</span>
           <span className="hint">Scan QR, slide to redeem once</span>
         </button>}
       </div>
@@ -989,7 +984,7 @@ function PersonCard({ person, tone, headline, children }) {
     <div className={"trip result result-" + tone} style={{ marginTop: 20 }}>
       <div className="trip-band" style={{ background: h.hex }}>
         <div>
-          <div style={{ fontSize: 13, opacity: 0.92 }}>House {h.name} - {person.department}</div>
+          <div style={{ fontSize: 13, opacity: 0.92 }}>{teamLabel(h)} - {person.department}</div>
           <div className="wide" style={{ fontSize: 29, fontWeight: 700 }}>{person.name}</div>
         </div>
         <div className="num" style={{ fontSize: 15 }}>{person.token}</div>
@@ -1013,7 +1008,7 @@ function ScanPopup({ person, kind, onClose }) {
   const msg = {
     in: { top: "Welcome!", line: "Thank you for coming to " + EVENT.name + ".", sub: EVENT.hasGift ? "Next stop: the gift counter." : "Enjoy the day - go " + h.name + "!" },
     again: { top: "Already checked in", line: "You checked in at " + clock(person.checkedInAt) + ". No need to scan again.", sub: "Enjoy the day - go " + h.name + "!" },
-    gift: { top: "Enjoy your gift!", line: "Thank you for joining " + EVENT.name + ".", sub: "Go " + h.name + "!" },
+    gift: { top: "Enjoy your " + EVENT.gift.toLowerCase() + "!", line: EVENT.gift + " recorded - one per pass.", sub: "Thank you for joining " + EVENT.name + "." },
   }[kind];
   return (
     <div className="pop-back" onClick={onClose} role="dialog" aria-live="assertive">
@@ -1022,7 +1017,7 @@ function ScanPopup({ person, kind, onClose }) {
         {kind === "again" && <div className="pop-tick" aria-hidden="true">&#10003;</div>}
         <div className="pop-top">{msg.top}</div>
         <div className="pop-name">{person.name}</div>
-        <div className="pop-team"><span className="chip-dot" style={{ background: "#fff" }} />House {h.name} &middot; {person.department}</div>
+        <div className="pop-team"><span className="chip-dot" style={{ background: "#fff" }} />{teamLabel(h)} &middot; {person.department}</div>
         <div className="pop-line">{msg.line}</div>
         <div className="pop-sub">{msg.sub}</div>
         <div className="pop-tap">Tap to continue</div>
@@ -1073,53 +1068,58 @@ function CheckInStation({ go, people }) {
   );
 }
 
+// Lunch counter: scan = redeem. Must be checked in at the lobby first; one lunch per pass.
+// Only the database decides (conditional update), so two counters can never serve the
+// same pass twice and the count always tallies. Nothing is saved offline here on purpose.
 function GiftStation({ go, people, toast }) {
-  const [token, setToken] = useState("");
-  const [missing, setMissing] = useState("");
+  const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
-  const person = token ? people.find((p) => p.token === token) : null;
+  const [pop, setPop] = useState(null);
+  const closePop = useCallback(() => setPop(null), []);
+  const label = EVENT.gift;
+  const served = people.filter((p) => p.giftClaimedAt).length;
+  const checked = people.filter((p) => p.checkedInAt).length;
 
   const onCode = async (raw) => {
     const t = db.normToken(raw);
     setBusy(true);
     try {
-      const p = await db.findByToken(t);
-      if (p) { setToken(p.token); setMissing(""); }
-      else { setToken(""); setMissing(t); }
-    } catch (e) { setMissing(t); }
+      const r = await db.claimGift(t);
+      if (r.person && r.person.token !== t) { setRes({ error: true }); beep(false); return; }
+      setRes(r.person ? r : { missing: t });
+      if (r.ok) setPop({ person: r.person, id: Date.now() });
+      else beep(false);
+    } catch (e) { setRes({ error: true }); beep(false); }
     finally { setBusy(false); }
   };
-  const [pop, setPop] = useState(null);
-  const closePop = useCallback(() => setPop(null), []);
-  const claim = async () => {
-    const r = await db.claimGift(token);
-    if (r.ok) { toast("Gift redeemed for " + r.person.name, "ok"); setPop({ person: r.person, id: Date.now() }); }
-    else if (r.already) toast("Already claimed!", "bad");
-  };
-  const checkInNow = async () => { await db.checkIn(token); };
 
   return (
     <div className="shell section" style={{ maxWidth: 640 }}>
       <button className="linkish" onClick={() => go("staff")}>&larr; Stations</button>
-      <h1 style={{ fontSize: 42, margin: "8px 0 20px" }}>Gift counter</h1>
+      <h1 style={{ fontSize: 42, margin: "8px 0 16px" }}>{label} counter</h1>
+      <div className="scan-stats">
+        <div><b className="num">{served}</b><span>{label} served</span></div>
+        <div><b className="num">{Math.max(0, checked - served)}</b><span>Checked in, not served</span></div>
+        <div><b className="num">{checked}</b><span>Checked in</span></div>
+      </div>
       <Scanner onCode={onCode} busy={busy} people={people} />
-      {missing && <div className="banner banner-bad" style={{ marginTop: 20 }}>No RSVP matches {missing}.</div>}
-      {person && (person.giftClaimedAt ? (
-        <PersonCard key={person.token + "c"} person={person} tone="bad" headline="ALREADY CLAIMED">
-          <div className="claimed-stamp claimed-big">CLAIMED <span>{stamp(person.giftClaimedAt)}</span></div>
-          <p className="hint" style={{ marginTop: 10 }}>Do not hand over another gift.</p>
+      {res && res.ok && (
+        <PersonCard key={res.person.token + "ok"} person={res.person} tone="ok" headline={label + " OK - hand over the meal"}>
+          <p className="hint">Recorded at {clock(res.person.giftClaimedAt)}. This pass cannot collect again.</p>
         </PersonCard>
-      ) : !person.checkedInAt ? (
-        <PersonCard key={person.token + "n"} person={person} tone="warn" headline="Not checked in yet">
-          <p className="hint" style={{ marginBottom: 14 }}>The guest skipped the lobby desk. Check them in here, then redeem.</p>
-          <button className="btn btn-ink" onClick={checkInNow}>Check in now</button>
+      )}
+      {res && res.already && (
+        <PersonCard key={res.person.token + "al"} person={res.person} tone="bad" headline={"ALREADY COLLECTED at " + clock(res.person.giftClaimedAt)}>
+          <p className="hint">Do not hand over another meal.</p>
         </PersonCard>
-      ) : (
-        <PersonCard key={person.token + "r"} person={person} tone="ok" headline="Ready to redeem">
-          <SlideToClaim label="Slide to redeem gift" onComplete={claim} />
-          <p className="hint" style={{ marginTop: 10 }}>Hand over the gift once this card turns to CLAIMED.</p>
+      )}
+      {res && res.notCheckedIn && (
+        <PersonCard key={res.person.token + "n"} person={res.person} tone="warn" headline="Not checked in yet">
+          <p className="hint">Please check in at the lobby registration counter first, then come back for {label.toLowerCase()}.</p>
         </PersonCard>
-      ))}
+      )}
+      {res && res.missing !== undefined && <div className="banner banner-bad" style={{ marginTop: 20 }}>No guest matches {res.missing || "that code"}.</div>}
+      {res && res.error && <div className="banner banner-bad" style={{ marginTop: 20 }}>No connection - NOT recorded. Do not hand over food yet; scan again.</div>}
       {pop && <ScanPopup key={pop.id} person={pop.person} kind="gift" onClose={closePop} />}
     </div>
   );
@@ -1504,7 +1504,7 @@ function Overview({ people }) {
         <div className="kpi"><div className="num kpi-v"><Counter value={total} /></div><div className="kpi-l">RSVP'd</div></div>
         <div className="kpi"><div className="num kpi-v"><Counter value={checked} /></div><div className="kpi-l">Checked in <b>{pct(checked, total)}%</b></div></div>
         {EVENT.hasGift
-          ? <div className="kpi"><div className="num kpi-v"><Counter value={gifts} /></div><div className="kpi-l">Gifts claimed <b>{pct(gifts, checked)}%</b></div></div>
+          ? <div className="kpi"><div className="num kpi-v"><Counter value={gifts} /></div><div className="kpi-l">{EVENT.gift} served <b>{pct(gifts, checked)}%</b></div></div>
           : <div className="kpi"><div className="num kpi-v"><Counter value={people.filter((p) => p.emailSentAt).length} /></div><div className="kpi-l">Emails sent <b>{pct(people.filter((p) => p.emailSentAt).length, total)}%</b></div></div>}
         <div className="kpi"><div className="num kpi-v"><Counter value={total - checked} /></div><div className="kpi-l">Yet to arrive</div></div>
       </div>
@@ -1541,7 +1541,7 @@ function Overview({ people }) {
 }
 
 function exportCsv(rows) {
-  const head = ["Name", "Department", "Email", "Phone", "House", "Pass code", "RSVP at", "Checked in at"].concat(EVENT.hasGift ? ["Gift claimed at"] : []);
+  const head = ["Name", "Department", "Email", "Phone", "House", "Pass code", "RSVP at", "Checked in at"].concat(EVENT.hasGift ? [EVENT.gift + " collected at"] : []);
   const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
   const lines = [head.map(q).join(",")].concat(rows.map((p) =>
     [p.name, p.department, p.email, p.phone, houseOf(p.house).name, p.token, stamp(p.createdAt), stamp(p.checkedInAt)].concat(EVENT.hasGift ? [stamp(p.giftClaimedAt)] : []).map(q).join(",")));
@@ -1563,7 +1563,7 @@ function QrModal({ person, onClose }) {
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={"QR pass for " + person.name}>
         <div className="modal-band" style={{ background: h.hex }}>
-          <div style={{ fontSize: 13, opacity: 0.92 }}>House {h.name} - {person.department}</div>
+          <div style={{ fontSize: 13, opacity: 0.92 }}>{teamLabel(h)} - {person.department}</div>
           <div className="wide" style={{ fontSize: 24, fontWeight: 700 }}>{person.name}</div>
         </div>
         <div style={{ padding: 24, textAlign: "center" }}>
@@ -1606,6 +1606,7 @@ function Roster({ people, go, toast }) {
         <select className="input" value={house} onChange={(e) => setHouse(e.target.value)}>
           <option value="">All houses</option>
           {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name}</option>)}
+          <option value={SPECTATOR.key}>Spectators</option>
         </select>
         <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
           <option value="">All departments</option>
@@ -1615,20 +1616,20 @@ function Roster({ people, go, toast }) {
           <option value="">Any status</option>
           <option value="in">Checked in</option>
           <option value="out">Not arrived</option>
-          {EVENT.hasGift && <option value="gift">Gift claimed</option>}
-          {EVENT.hasGift && <option value="nogift">In, gift pending</option>}
+          {EVENT.hasGift && <option value="gift">{EVENT.gift} collected</option>}
+          {EVENT.hasGift && <option value="nogift">In, {EVENT.gift.toLowerCase()} pending</option>}
         </select>
         <button className="btn btn-ink btn-sm" onClick={() => exportCsv(rows)}>Export CSV ({rows.length})</button>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table className="grid">
-          <thead><tr><th>Name</th><th>Department</th><th>Contact</th><th>House</th><th>Pass</th><th>Check-in</th>{EVENT.hasGift && <th>Gift</th>}<th /></tr></thead>
+          <thead><tr><th>Name</th><th>Department</th><th>Contact</th><th>House</th><th>Pass</th><th>Check-in</th>{EVENT.hasGift && <th>{EVENT.gift}</th>}<th /></tr></thead>
           <tbody>
             {rows.map((p) => {
               const h = houseOf(p.house);
               return (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 700 }}>{p.name}</td>
+                  <td style={{ fontWeight: 700 }}>{p.name}{p.nominated && <><br /><small style={{ fontWeight: 500, color: "var(--ink-3)" }}>{p.nominated}</small></>}</td>
                   <td>{p.department}</td>
                   <td style={{ fontSize: 14 }}>{p.email}<br /><span style={{ color: "var(--ink-3)" }}>{p.phone}</span></td>
                   <td><span className="tag" style={{ background: h.hex + "22", color: h.hex }}><span className="chip-dot" style={{ background: h.hex }} />{h.name}</span></td>
@@ -1640,7 +1641,7 @@ function Roster({ people, go, toast }) {
                     {p.checkedInAt
                       ? <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.updatePerson(p.id, { checkedInAt: null, giftClaimedAt: null }), "Check-in reset")}>Undo in</button>
                       : <button className="btn btn-ghost btn-xs" onClick={() => act(() => db.checkIn(p.token), "Checked in")}>Check in</button>}
-                    {EVENT.hasGift && p.giftClaimedAt && <button className="btn btn-ghost btn-xs" onClick={() => window.confirm("Reset the gift claim for " + p.name + "?") && act(() => db.updatePerson(p.id, { giftClaimedAt: null }), "Gift reset")}>Reset gift</button>}
+                    {EVENT.hasGift && p.giftClaimedAt && <button className="btn btn-ghost btn-xs" onClick={() => window.confirm("Reset " + EVENT.gift.toLowerCase() + " for " + p.name + "?") && act(() => db.updatePerson(p.id, { giftClaimedAt: null }), EVENT.gift + " reset")}>Reset {EVENT.gift.toLowerCase()}</button>}
                     <button className="btn btn-ghost btn-xs btn-danger" onClick={() => window.confirm("Delete " + p.name + "'s RSVP?") && act(() => db.deletePerson(p.id), "Deleted")}>Delete</button>
                   </td>
                 </tr>
@@ -1701,7 +1702,7 @@ function PeopleIn({ people, go }) {
             return (
               <li key={p.id} className="in-row">
                 <span className="in-dot" style={{ background: h.hex }} />
-                <span className="in-name"><b>{p.name}</b><small>{p.department} - House {h.name}</small></span>
+                <span className="in-name"><b>{p.name}</b><small>{p.department} - {teamLabel(h)}</small></span>
                 <span className="num in-code">{p.token}</span>
                 <span className="tag" style={{ background: "var(--grab-wash)", color: "var(--grab-deep)" }}>In {clock(p.checkedInAt)}</span>
                 {EVENT.hasGift && (p.giftClaimedAt ? <span className="tag tag-gift">Gift {clock(p.giftClaimedAt)}</span> : <span className="tag">Gift pending</span>)}
@@ -1717,22 +1718,25 @@ function PeopleIn({ people, go }) {
 
 /* ---------------- email sender ---------------- */
 
-const TPL_KEY = "grab_email_tpl_v5";
+const TPL_KEY = "grab_email_tpl_v6";
 const TPL_PRESETS = {
   confirm: {
     label: "RSVP confirmation",
     subject: "Grab MY Hari Sukan 2026 - Your Check-In QR Code and Event Details",
-    message: "Your registration for Grab MY Hari Sukan 2026 is confirmed. You're in House **{house}**.",
+    message: "Your registration for Grab MY Hari Sukan 2026 is confirmed. You're in Team **{house}**.",
+    spectatorMessage: "Your attendance as a spectator for Grab MY Hari Sukan 2026 is confirmed. We look forward to seeing you there!",
   },
   reminder: {
     label: "Event reminder",
     subject: "Reminder: Grab MY Hari Sukan is on {date}",
-    message: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nWear your {colour} Hari Sukan T-shirt for House {house} and bring this QR to check in at the lobby.",
+    message: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nWear your {colour} Hari Sukan T-shirt for Team {house} and bring this QR to check in at the lobby.",
+    spectatorMessage: "Just a reminder that Grab MY Hari Sukan is happening on {date} at {venue}. Doors open at {doors}.\n\nPlease bring this QR to check in at the lobby.",
   },
   thanks: {
     label: "Thank you (after event)",
     subject: "Thank you for joining Grab MY Hari Sukan",
-    message: "Thank you for being part of Grab MY Hari Sukan and cheering for House {house}.\n\nWe hope you had a great day. See you at the next one!",
+    message: "Thank you for being part of Grab MY Hari Sukan and competing for Team {house}.\n\nWe hope you had a great day. See you at the next one!",
+    spectatorMessage: "Thank you for joining Grab MY Hari Sukan and cheering everyone on.\n\nWe hope you had a great day. See you at the next one!",
   },
 };
 function loadTpl() {
@@ -1740,14 +1744,15 @@ function loadTpl() {
     const t = JSON.parse(localStorage.getItem(TPL_KEY));
     if (t && t.subject != null) return /^You're in/i.test(t.subject) ? { ...t, subject: TPL_PRESETS.confirm.subject } : t;
   } catch (e) { /* ignore */ }
-  return { subject: TPL_PRESETS.confirm.subject, message: TPL_PRESETS.confirm.message };
+  return { subject: TPL_PRESETS.confirm.subject, message: TPL_PRESETS.confirm.message, spectatorMessage: TPL_PRESETS.confirm.spectatorMessage };
 }
+const msgFor = (p, tpl) => (isSpec(p) ? tpl.spectatorMessage || TPL_PRESETS.confirm.spectatorMessage : tpl.message);
 
 function EmailPreview({ person, subject, message }) {
   const h = houseOf(person.house);
   const html = buildEmailHtml({
     name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour,
-    passUrl: passUrl(person.token), agendaUrl: mailPdfUrl(), logoUrl: mailLogoUrl(),
+    challenge: person.nominated, spectator: isSpec(person), logoUrl: mailLogoUrl(),
     message: fillTemplate(message, person), event: EVENT,
   });
   return (
@@ -1767,6 +1772,8 @@ function EmailCenter({ people, toast }) {
   const [testTo, setTestTo] = useState("");
   const [testName, setTestName] = useState("");
   const [testHouse, setTestHouse] = useState("");
+  const [testCc, setTestCc] = useState("");
+  const [view, setView] = useState("participant");
   const [prog, setProg] = useState(null); // { done, total, ok, fail, errors }
   const stopRef = useRef(false);
   const msgRef = useRef(null);
@@ -1782,23 +1789,29 @@ function EmailCenter({ people, toast }) {
   };
 
   const recipients = people.filter((p) => {
-    if (house && p.house !== house) return false;
+    if (house === "participants" ? isSpec(p) : house && p.house !== house) return false;
     if (who === "unsent") return !p.emailSentAt;
     if (who === "in") return !!p.checkedInAt;
     if (who === "out") return !p.checkedInAt;
     if (who === "picked") return picked.has(p.id);
     return true;
   });
-  const sample = recipients[0] || people[0] || { name: "Nurul Aisyah", house: "green", department: "Operations", token: "GRB-SAMPLE" };
+  const base = recipients.find((p) => (view === "spectator") === isSpec(p)) || people.find((p) => (view === "spectator") === isSpec(p));
+  const sample = base || (view === "spectator"
+    ? { name: "Nurul Aisyah binti Rahman", house: SPECTATOR.key, department: "Operations", token: "GRB-SAMPLE" }
+    : { name: "Nurul Aisyah binti Rahman", house: "red", department: "Operations", token: "GRB-SAMPLE", nominated: "Fitness Challenge (Main Participant)" });
   const sending = prog && prog.done < prog.total && !prog.stopped;
 
   const sendTest = async () => {
     if (!/^\S+@\S+\.\S+$/.test(testTo.trim())) return toast("Enter a valid test email", "bad");
     // Test emails use the name/house typed here and a dummy pass code (GRB-TEST00),
     // never a real guest's QR.
+    const ccList = testCc.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+    if (ccList.some((x) => !EMAIL_RE.test(x))) return toast("Check the CC addresses", "bad");
     const t = { ...sample, name: testName.trim() || sample.name, house: testHouse || sample.house, department: "Test", token: "GRB-TEST00" };
-    const r = await sendPassEmail(t, { ...tpl, to: testTo.trim() });
-    toast(r.ok ? "Test sent to " + testTo.trim() : r.error, r.ok ? "ok" : "bad");
+    if (!isSpec(t) && !t.nominated) t.nominated = "Fitness Challenge (Main Participant)";
+    const r = await sendPassEmail(t, { subject: tpl.subject, message: msgFor(t, tpl), to: testTo.trim(), cc: ccList });
+    toast(r.ok ? "Test sent to " + testTo.trim() + (ccList.length ? " (cc " + ccList.join(", ") + ")" : "") : r.error, r.ok ? "ok" : "bad");
   };
 
   const sendAll = async () => {
@@ -1809,7 +1822,7 @@ function EmailCenter({ people, toast }) {
     list.forEach((p) => { const e = String(p.email || "").toLowerCase(); seen[e] = (seen[e] || 0) + 1; });
     const issues = [];
     list.forEach((p) => {
-      const bad = emailProblems(p, p.email, fillTemplate(tpl.subject, p), fillTemplate(tpl.message, p));
+      const bad = emailProblems(p, p.email, fillTemplate(tpl.subject, p), fillTemplate(msgFor(p, tpl), p));
       if (seen[String(p.email || "").toLowerCase()] > 1) bad.push("email shared with another guest");
       if (bad.length) issues.push((p.name || "(no name)") + ": " + bad.join("; "));
     });
@@ -1822,7 +1835,7 @@ function EmailCenter({ people, toast }) {
     for (let i = 0; i < list.length; i++) {
       if (stopRef.current) { setProg((x) => ({ ...x, stopped: true })); return; }
       const p = list[i];
-      const r = await sendPassEmail(p, tpl);
+      const r = await sendPassEmail(p, { subject: tpl.subject, message: msgFor(p, tpl) });
       if (r.ok) { ok++; db.updatePerson(p.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); }
       else { fail++; errors.push(p.name + " - " + r.error); }
       setProg({ done: i + 1, total: list.length, ok, fail, errors: errors.slice() });
@@ -1841,13 +1854,15 @@ function EmailCenter({ people, toast }) {
         <p className="hint" style={{ marginBottom: 14 }}>Each email includes the guest's own QR pass, pass code and event details automatically.</p>
         <div className="tpl-presets">
           {Object.entries(TPL_PRESETS).map(([k, t]) => (
-            <button key={k} className="chip" onClick={() => window.confirm("Replace the current template with \"" + t.label + "\"?") && save({ subject: t.subject, message: t.message })}>{t.label}</button>
+            <button key={k} className="chip" onClick={() => window.confirm("Replace the current template with \"" + t.label + "\"?") && save({ subject: t.subject, message: t.message, spectatorMessage: t.spectatorMessage })}>{t.label}</button>
           ))}
         </div>
         <label className="field"><span className="field-label">Subject</span>
           <input className="input" value={tpl.subject} onChange={(e) => save({ ...tpl, subject: e.target.value })} /></label>
-        <label className="field"><span className="field-label">Message</span>
-          <textarea ref={msgRef} className="input" rows={8} value={tpl.message} onChange={(e) => save({ ...tpl, message: e.target.value })} /></label>
+        <label className="field"><span className="field-label">Message - participants</span>
+          <textarea ref={msgRef} className="input" rows={5} value={tpl.message} onChange={(e) => save({ ...tpl, message: e.target.value })} /></label>
+        <label className="field"><span className="field-label">Message - spectators</span>
+          <textarea className="input" rows={4} value={tpl.spectatorMessage || ""} onChange={(e) => save({ ...tpl, spectatorMessage: e.target.value })} /></label>
         <div className="tpl-fields">
           <span className="hint">Insert:</span>
           {EMAIL_FIELDS.map((f) => <button key={f} className="btn btn-ghost btn-xs" onClick={() => insert(f)}>{"{" + f + "}"}</button>)}
@@ -1860,12 +1875,14 @@ function EmailCenter({ people, toast }) {
           ))}
         </div>
         <select className="input" value={house} onChange={(e) => setHouse(e.target.value)} style={{ marginTop: 10 }}>
-          <option value="">All houses</option>
-          {HOUSES.map((h) => <option key={h.key} value={h.key}>House {h.name}</option>)}
+          <option value="">Everyone (participants + spectators)</option>
+          <option value="participants">Participants only</option>
+          {HOUSES.map((h) => <option key={h.key} value={h.key}>Team {h.name}</option>)}
+          <option value={SPECTATOR.key}>Spectators only</option>
         </select>
         {who === "picked" && (
           <div className="pick-list">
-            {people.filter((p) => !house || p.house === house).map((p) => (
+            {people.filter((p) => !house || (house === "participants" ? !isSpec(p) : p.house === house)).map((p) => (
               <label key={p.id} className="pick-row">
                 <input type="checkbox" checked={picked.has(p.id)} onChange={() => togglePick(p.id)} />
                 <span className="chip-dot" style={{ background: houseOf(p.house).hex }} />
@@ -1896,15 +1913,21 @@ function EmailCenter({ people, toast }) {
           <select className="input" style={{ flex: "0 1 170px" }} value={testHouse} onChange={(e) => setTestHouse(e.target.value)}>
             <option value="">House...</option>
             {HOUSES.map((h) => <option key={h.key} value={h.key}>{h.name}</option>)}
+            <option value={SPECTATOR.key}>Spectator</option>
           </select>
-          <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="their@email.com" />
+          <input className="input" style={{ flex: "1 1 220px" }} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="to: their@email.com" />
+          <input className="input" style={{ flex: "1 1 100%" }} value={testCc} onChange={(e) => setTestCc(e.target.value)} placeholder="CC (optional): joanne@..., jenny@..." />
           <button className="btn btn-ghost" onClick={sendTest}>Send test</button>
         </div>
         <p className="hint" style={{ marginTop: 8 }}>Test emails use the name and house you type here with a dummy QR (GRB-TEST00) - never a real guest's pass.</p>
       </div>
       <div className="email-side">
+        <div className="tpl-presets" style={{ marginBottom: 10 }}>
+          <button className="chip" aria-pressed={view === "participant"} onClick={() => setView("participant")}>Participant email</button>
+          <button className="chip" aria-pressed={view === "spectator"} onClick={() => setView("spectator")}>Spectator email</button>
+        </div>
         <div className="field-label" style={{ marginBottom: 10 }}>Live preview - {sample.name}</div>
-        <EmailPreview person={sample} subject={tpl.subject} message={tpl.message} />
+        <EmailPreview person={sample} subject={tpl.subject} message={msgFor(sample, tpl)} />
       </div>
     </div>
   );
@@ -2106,7 +2129,7 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
 
   if (!winnersOnly) {
     const ph = ["Name", "Department", "Email", "Phone", "House", "Colour", "Pass code", "RSVP at (MYT)", "Checked in", "Check-in time (MYT)", "Before " + EARLY_BONUS.before];
-    if (EVENT.hasGift) ph.push("Gift claimed (MYT)");
+    if (EVENT.hasGift) ph.push(EVENT.gift + " collected (MYT)");
     ph.push("Pass email sent (MYT)");
     const row = (p) => {
       const h = houseOf(p.house);
@@ -2370,6 +2393,154 @@ function ruleExample(c) {
   return "Example: limit " + limit + " min. A 1st-place house finishing in " + (limit + over) + " min is " + over + " min over, so gets " + (pts[0] || 0) + " - " + lost + " = " + Math.max(0, (pts[0] || 0) - lost) + " points. Finishing within the limit loses nothing.";
 }
 
+/* ================= import name list (admin) ================= */
+
+// "Red", "Red Samurais", "samurai", "Spectator" ... -> house key
+function parseHouse(v, type) {
+  const t = (String(v || "") + " " + String(type || "")).toLowerCase();
+  if (/spect|audience|watch/.test(t)) return SPECTATOR.key;
+  if (/red|samurai/.test(t)) return "red";
+  if (/blue|viking/.test(t)) return "blue";
+  if (/purple|knight/.test(t)) return "green";
+  if (/yellow|gladiator/.test(t)) return "yellow";
+  return "";
+}
+const COLS = {
+  name: /^(full\s*)?name|participant|employee name/i,
+  email: /e-?mail/i,
+  department: /dep|division|team name|business unit|\bbu\b/i,
+  phone: /phone|mobile|contact|tel/i,
+  house: /house|team|colou?r/i,
+  type: /type|category|role|attendee|participant\s*\/\s*spectator/i,
+  nominated: /nominat|challenge|event|activity|game/i,
+};
+
+async function downloadImportTemplate() {
+  const XLSX = await import("xlsx");
+  const ws = XLSX.utils.aoa_to_sheet([
+    ["Full Name", "Email", "Department", "Phone", "House", "Attendee Type", "Nominated Challenge"],
+    ["Nurul Aisyah binti Rahman", "nurul.aisyah@grab.com", "Operations", "+60 12-345 6781", "Red Samurais", "Participant", "Fitness Challenge (Main Participant)"],
+    ["Tan Wei Sheng", "weisheng.tan@grab.com", "Engineering", "+60 12-345 6782", "", "Spectator", ""],
+  ]);
+  ws["!cols"] = [28, 30, 18, 18, 16, 16, 36].map((w) => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Guests");
+  XLSX.writeFile(wb, "hari-sukan-guest-list-template.xlsx");
+}
+
+function ImportList({ people, toast }) {
+  const [rows, setRows] = useState(null);
+  const [file, setFile] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState(null);
+  const [result, setResult] = useState(null);
+  const [sqlNeeded, setSqlNeeded] = useState(false);
+  const known = useMemo(() => new Set(people.map((p) => p.email)), [people]);
+
+  const read = async (f) => {
+    if (!f) return;
+    setResult(null); setFile(f.name);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+      const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+      // Header row = first row that mentions a name and an email column.
+      const hi = grid.findIndex((r) => r.some((c) => COLS.email.test(String(c))) && r.some((c) => /name/i.test(String(c))));
+      if (hi < 0) { toast("Couldn't find Name and Email columns in that file", "bad"); return; }
+      const head = grid[hi].map((c) => String(c).trim());
+      const col = {};
+      // Match the most specific columns first so "Nominated Challenge" isn't taken as "Team".
+      ["email", "phone", "nominated", "type", "house", "department", "name"].forEach((k) => {
+        const i = head.findIndex((h, j) => h && COLS[k].test(h) && !Object.values(col).includes(j));
+        if (i >= 0) col[k] = i;
+      });
+      const seen = {};
+      const parsed = grid.slice(hi + 1).filter((r) => r.some((c) => String(c).trim())).map((r, n) => {
+        const g = (k) => (col[k] !== undefined ? String(r[col[k]] || "").trim() : "");
+        const email = g("email").toLowerCase();
+        const house = parseHouse(g("house"), g("type"));
+        const problems = [];
+        if (!g("name")) problems.push("no name");
+        if (!EMAIL_RE.test(email)) problems.push("bad email");
+        if (!house) problems.push("house unknown");
+        if (seen[email]) problems.push("duplicate in file (row " + seen[email] + ")");
+        seen[email] = seen[email] || n + hi + 2;
+        return { line: n + hi + 2, name: g("name"), email, department: g("department"), phone: g("phone"), house, nominated: house === SPECTATOR.key ? "" : g("nominated"), problems, update: known.has(email) };
+      });
+      setRows(parsed);
+    } catch (e) { toast("Couldn't read that file: " + e.message, "bad"); }
+  };
+
+  const good = (rows || []).filter((r) => !r.problems.length);
+  const run = async () => {
+    if (!good.length) return;
+    if (!window.confirm("Import " + good.length + " guests?\n\n" + good.filter((r) => !r.update).length + " new, " + good.filter((r) => r.update).length + " updated (existing pass codes are kept). No emails are sent.")) return;
+    setBusy(true); setProg({ done: 0, total: good.length });
+    try {
+      const r = await db.importPeople(good, (done, total) => setProg({ done, total }));
+      setResult(r);
+      if (r.failed.some((f) => /nominated|check constraint|house_check/i.test(f.error))) setSqlNeeded(true);
+      toast("Imported: " + r.added + " new, " + r.updated + " updated" + (r.failed.length ? ", " + r.failed.length + " failed" : ""), r.failed.length ? "bad" : "ok");
+    } finally { setBusy(false); }
+  };
+  const counts = { spec: good.filter((r) => r.house === SPECTATOR.key).length };
+
+  return (
+    <div className="bk-stack">
+      {sqlNeeded && db.MODE === "live" && (
+        <div className="panel">
+          <h3>One-time database step</h3>
+          <p className="hint" style={{ margin: "6px 0 10px" }}>Run this once in Supabase (SQL Editor &rarr; New query &rarr; Run), then import again. It adds Spectators and the Nominated Challenge column.</p>
+          <pre className="sql-box">{db.IMPORT_SQL}</pre>
+          <button className="btn btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(db.IMPORT_SQL); toast("SQL copied"); }}>Copy SQL</button>
+        </div>
+      )}
+      <div className="panel">
+        <h3>Import the guest list</h3>
+        <p className="hint" style={{ margin: "6px 0 14px" }}>Excel or CSV with columns: Full Name, Email, Department, Phone, House (e.g. Red Samurais), Attendee Type (Participant / Spectator), Nominated Challenge. Column names don't need to match exactly. Importing again <b>updates</b> people by email and keeps their QR, check-in and lunch status. No emails are sent - send them from the Email tab.</p>
+        <div className="bk-btns" style={{ marginTop: 0 }}>
+          <label className="btn btn-ink" style={{ cursor: "pointer" }}>Choose Excel / CSV file
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { read(e.target.files[0]); e.target.value = ""; }} />
+          </label>
+          <button className="btn btn-ghost" onClick={downloadImportTemplate}>Download template</button>
+        </div>
+      </div>
+
+      {rows && (
+        <div className="panel">
+          <div className="cs-head">
+            <h3>{file}</h3>
+            <span className="hint" style={{ marginLeft: "auto" }}>{rows.length} rows - {good.length} ready ({counts.spec} spectators) - {rows.length - good.length} with problems</span>
+          </div>
+          <div style={{ overflowX: "auto", marginTop: 12, maxHeight: 460 }}>
+            <table className="grid">
+              <thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Department</th><th>Phone</th><th>House</th><th>Nominated challenge</th><th>Status</th></tr></thead>
+              <tbody>
+                {rows.map((r) => {
+                  const h = r.house ? houseOf(r.house) : null;
+                  return (
+                    <tr key={r.line} style={r.problems.length ? { background: "#fde6e3" } : null}>
+                      <td>{r.line}</td><td style={{ fontWeight: 700 }}>{r.name}</td><td>{r.email}</td><td>{r.department}</td><td>{r.phone}</td>
+                      <td>{h ? <span style={{ color: h.hex, fontWeight: 700 }}>{h.name}</span> : "-"}</td>
+                      <td>{r.nominated}</td>
+                      <td>{r.problems.length ? <b className="bad-txt">{r.problems.join(", ")}</b> : r.update ? "Update" : "New"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="cs-bar" style={{ marginTop: 14 }}>
+            {prog && <span className="hint">{prog.done}/{prog.total} saved</span>}
+            {result && <span className="hint">{result.added} added, {result.updated} updated{result.failed.length ? ", " + result.failed.length + " failed: " + result.failed.slice(0, 3).map((f) => f.email + " (" + f.error + ")").join("; ") : ""}</span>}
+            <button className="btn btn-ink" style={{ marginLeft: "auto" }} disabled={busy || !good.length} onClick={run}>{busy ? "Importing..." : "Import " + good.length + " guests"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Admin({ people, scores, totals, standings, bonus, health, settingsInfo, go, toast }) {
   const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_admin") === "1"; } catch (e) { return false; } });
   const [tab, setTab] = useState("overview");
@@ -2385,12 +2556,13 @@ function Admin({ people, scores, totals, standings, bonus, health, settingsInfo,
         <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
       </div>
       <div className="tabs" role="tablist">
-        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["email", "Email"], ["score", "Scoring"], ["setup", "Challenges"], ["ledger", "Score ledger"], ["backup", "Backup & export"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["in", "People in (" + people.filter((p) => p.checkedInAt).length + ")"], ["roster", "Guests (" + people.length + ")"], ["import", "Import list"], ["email", "Email"], ["score", "Scoring"], ["setup", "Challenges"], ["ledger", "Score ledger"], ["backup", "Backup & export"]].map(([k, label]) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
       {tab === "overview" && <Overview people={people} />}
       {tab === "roster" && <Roster people={people} go={go} toast={toast} />}
+      {tab === "import" && <ImportList people={people} toast={toast} />}
       {tab === "in" && <PeopleIn people={people} go={go} />}
       {tab === "email" && <EmailCenter people={people} toast={toast} />}
       {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
@@ -2571,7 +2743,7 @@ export default function App() {
   else if (page === "pass") body = <Pass key={arg} arg={arg} people={people} go={go} toast={toast} />;
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
-  else if (page === "gift" && EVENT.hasGift) body = <PinGate title="Gift counter"><GiftStation go={go} people={people} toast={toast} /></PinGate>;
+  else if (page === "gift" && EVENT.hasGift) body = <PinGate title={EVENT.gift + " counter"}><GiftStation go={go} people={people} toast={toast} /></PinGate>;
   else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} settingsInfo={settingsInfo} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
 

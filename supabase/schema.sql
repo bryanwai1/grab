@@ -47,3 +47,9 @@ create table if not exists grab_settings (
 alter table grab_settings enable row level security;
 create policy "settings all" on grab_settings for all using (true) with check (true);
 alter publication supabase_realtime add table grab_settings;
+
+-- Spectators + nominated challenge (name list import). Run once:
+alter table grab_people add column if not exists nominated text;
+alter table grab_people drop constraint if exists grab_people_house_check;
+alter table grab_people add constraint grab_people_house_check
+  check (house in ('blue','red','green','yellow','spectator'));

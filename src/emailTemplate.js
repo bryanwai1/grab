@@ -16,12 +16,14 @@ const icon = (emoji, size = 32) =>
   `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td align="center" valign="middle" width="${size}" height="${size}" style="width:${size}px;height:${size}px;background:${SOFT};border-radius:10px;font-size:${Math.round(size * 0.5)}px;line-height:${size}px">${emoji}</td></tr></table>`;
 
 export function buildEmailHtml(o) {
-  const { name, token, house, houseHex, houseColour, challenge, passUrl, agendaUrl, logoUrl, message, event = {} } = o;
+  const { name, token, house, houseHex, houseColour, challenge, logoUrl, message, spectator, event = {} } = o;
   const color = /^#[0-9a-f]{6}$/i.test(houseHex || "") ? houseHex : GREEN;
   const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=" + encodeURIComponent(token || "");
   const title = ((event.name || "") + " " + (event.year || "")).trim();
 
-  const intro = String(message || `Your registration for ${title} is confirmed. You're in House **${house || ""}**.`)
+  const intro = String(message || (spectator
+    ? `Your attendance as a spectator for ${title} is confirmed. We look forward to seeing you there!`
+    : `Your registration for ${title} is confirmed. You're in Team **${house || ""}**.`))
     .trim().split(/\n\s*\n/)
     .map((p) => `<p style="margin:0 0 8px;font:15px/1.5 Arial,sans-serif;color:${INK}">${rich(p, color).replace(/\n/g, "<br/>")}</p>`).join("");
 
@@ -38,7 +40,7 @@ export function buildEmailHtml(o) {
       <td valign="middle" style="border-left:1px solid #cfdcd3;padding:2px 0 2px 12px;font:13px/1.45 Arial,sans-serif;color:${INK}">${body}</td>
     </tr></table></td></tr>`;
 
-  const dress = (event.dressCode || []).map((d, i) => "&bull; " + (i === 0 && houseColour ? esc(String(d).replace("your house colour", "")) + `<strong style="color:${color}">${esc(String(houseColour).toLowerCase())}</strong>` : esc(d))).join("<br/>");
+  const dress = ((spectator ? event.spectatorDressCode : event.dressCode) || []).map((d, i) => "&bull; " + (i === 0 && houseColour && !spectator ? esc(String(d).replace("your house colour", "")) + `<strong style="color:${color}">${esc(String(houseColour).toLowerCase())}</strong>` : esc(d))).join("<br/>");
 
   const rates = event.parkingRates || [];
   const parkingTable = rates.length ? `<tr><td style="padding:6px 0">
@@ -56,12 +58,16 @@ export function buildEmailHtml(o) {
       </td>
     </tr></table></td></tr>` : "";
 
-  const itin = (event.emailItinerary || []).map(([t, n]) => `<tr>
-      <td width="70" style="padding:5px 12px;border-bottom:1px solid #d7e6dc;font:700 12px Arial,sans-serif;color:${INK}">${esc(t)}</td>
-      <td style="padding:5px 12px 5px 0;border-bottom:1px solid #d7e6dc;font:12px Arial,sans-serif;color:${INK}">${esc(n)}</td></tr>`).join("");
+  const lunch = (event.lunchActivities || []).length ? `<div style="margin-top:6px;padding:8px 10px;background:#fff;border-radius:8px">
+      <div style="font:900 11px Arial,sans-serif;color:${DARK};letter-spacing:.3px">MORE FUN AWAITS DURING LUNCH BREAK!</div>
+      <div style="font:11px/1.4 Arial,sans-serif;color:${MUTED};margin:2px 0 4px">Take a break, recharge and explore these exciting activities!</div>
+      ${event.lunchActivities.map(([a, t]) => `<div style="font:11px/1.45 Arial,sans-serif;color:${INK};padding:2px 0"><strong>${esc(a)}</strong><br/><span style="color:${MUTED}">${esc(t)}</span></div>`).join("")}
+    </div>` : "";
+  const itinRows = (spectator ? event.spectatorItinerary : event.emailItinerary) || event.emailItinerary || [];
+  const itin = itinRows.map(([t, n]) => `<tr>
+      <td width="70" valign="top" style="padding:5px 12px;border-bottom:1px solid #d7e6dc;font:700 12px Arial,sans-serif;color:${INK};white-space:nowrap">${esc(t)}</td>
+      <td valign="top" style="padding:5px 12px 5px 0;border-bottom:1px solid #d7e6dc;font:12px Arial,sans-serif;color:${INK}">${esc(n)}${n === event.lunchRow ? lunch : ""}</td></tr>`).join("");
 
-  const btn = (href, label, style) => href ? `<a href="${esc(href)}" target="_blank" style="display:inline-block;margin:5px;font:700 14px Arial,sans-serif;padding:10px 20px;border-radius:999px;text-decoration:none;${style}">${label}</a>` : "";
-  const mapHref = event.address ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent((event.venue || "") + ", " + event.address) : "";
 
   const logo = /^https?:\/\//.test(logoUrl || "")
     ? `<img src="${esc(logoUrl)}" height="64" alt="${esc(title)}" style="display:block;height:64px;width:auto;margin:0 auto 8px"/>` : "";
@@ -96,9 +102,8 @@ export function buildEmailHtml(o) {
 <tr><td style="padding:2px 20px">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:${SOFT};border-radius:12px"><tr>
     <td width="44" align="center" valign="middle" style="padding:8px 0 8px 10px;font-size:24px">📱</td>
-    <td valign="middle" style="padding:8px 12px;font:14px/1.45 Arial,sans-serif;color:${INK}">Keep a <strong style="color:${DARK}">screenshot of your QR code</strong> on your phone and <strong style="color:${DARK}">bring it with you</strong> on the event day for check-in at the lobby registration counter.</td>
+    <td valign="middle" style="padding:8px 12px;font:14px/1.45 Arial,sans-serif;color:${INK}">${rich(event.qrNote || "Save a screenshot of your QR code in your phone and show it to our event crew at the lobby registration counter during check-in on the event day.")}</td>
   </tr></table>
-  <p style="margin:8px 0 2px;font:14px Arial,sans-serif;color:${INK}">See you at ${esc(event.venue || "")}!</p>
 </td></tr>
 
 <tr><td style="padding:8px 20px">
@@ -107,8 +112,8 @@ export function buildEmailHtml(o) {
       <div style="font:900 14px Arial,sans-serif;color:${DARK};padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid #cfdcd3">📋 YOUR REGISTRATION DETAILS</div>
       <table width="100%" cellpadding="0" cellspacing="0">
         ${detail("👤", "Full Name", esc(name))}
-        ${detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>` : "")}
-        ${detail("🏆", "Challenge", esc(challenge))}
+        ${spectator ? detail("👥", "Attendee Type", "<strong>Spectator</strong>") : detail("👥", "Representing House", house ? `<strong style="color:${color}">${esc(house)}</strong>` : "")}
+        ${!spectator && challenge ? detail("🏅", "Nominated Challenge", esc(challenge)) : ""}
         ${detail("📅", "Date", esc(event.dateLong))}
         ${detail("🕗", "Time", esc(event.eventTime))}
         ${detail("📍", "Venue & Address", `<strong>${esc(event.venue)}</strong><br/>${esc(event.address)}`)}
@@ -121,7 +126,7 @@ export function buildEmailHtml(o) {
 <tr><td style="padding:4px 20px">
   <table width="100%" cellpadding="0" cellspacing="0">
     ${dress ? infoRow("👕", "Dress code", dress) : ""}
-    ${event.obstacleRemark ? infoRow("🏃", "Obstacle challenge remark", rich(event.obstacleRemark)) : ""}
+    ${event.obstacleRemark && !spectator ? infoRow("🏃", "Obstacle challenge remark", rich(event.obstacleRemark)) : ""}
     ${event.parkingNote ? infoRow("🚗", "Parking", esc(event.parkingNote)) : ""}
     ${parkingTable}
     ${event.storageNote ? infoRow("🎒", "Storage of personal belongings", esc(event.storageNote)) : ""}
@@ -130,19 +135,19 @@ export function buildEmailHtml(o) {
 
 <tr><td style="padding:8px 20px">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td class="col" width="58%" valign="top" style="padding-right:8px">
+    <td class="col" width="${spectator ? "100%" : "58%"}" valign="top" style="padding-right:${spectator ? 0 : 8}px">
       <table width="100%" cellpadding="0" cellspacing="0" style="background:${SOFT};border-radius:12px;overflow:hidden">
         <tr><td colspan="2" style="background:${DARK};padding:8px 12px;font:800 13px Arial,sans-serif;color:#fff;border-radius:12px 12px 0 0">📅 EVENT ITINERARY</td></tr>
         ${itin}
       </table>
     </td>
-    <td class="col" width="42%" valign="top" style="padding-left:8px">
+    ${spectator ? "" : `<td class="col" width="42%" valign="top" style="padding-left:8px">
       <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF4CC;border-radius:12px"><tr><td align="center" style="padding:10px 12px">
         <div style="font:900 14px Arial,sans-serif;color:${DARK}">🏆 SPECIAL BONUS</div>
         <div style="font:13px/1.45 Arial,sans-serif;color:${INK};margin-top:6px">${rich(event.bonus || "", INK)}</div>
         <div style="font:italic 900 22px Arial,sans-serif;color:${DARK};margin-top:2px">${esc(event.bonusPoints || "")}</div>
       </td></tr></table>
-    </td>
+    </td>`}
   </tr></table>
 </td></tr>
 
@@ -151,14 +156,41 @@ export function buildEmailHtml(o) {
   <img src="${qrUrl}" width="170" height="170" alt="QR ${esc(token)}" style="display:block;border:10px solid #fff;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.14)"/>
   <div style="font:800 18px Arial,sans-serif;letter-spacing:2px;margin-top:6px;color:${INK}">${esc(token)}</div>
 </td></tr>
-<tr><td align="center" style="padding:4px 12px 12px">
-  ${btn(passUrl, "Open my pass", `background:${GREEN};color:#fff;border:2px solid ${GREEN}`)}
-  ${btn(mapHref, "Get directions", `background:#fff;color:${DARK};border:2px solid ${DARK}`)}
-  ${/^https?:\/\//.test(agendaUrl || "") ? btn(agendaUrl, "View agenda", `background:${DARK};color:#fff;border:2px solid ${DARK}`) : ""}
-</td></tr>
-<tr><td align="center" style="padding:0 20px 14px;font:12px Arial,sans-serif;color:${MUTED}">${esc(title)} &middot; ${esc(event.venue || "")}</td></tr>
+<tr><td align="center" style="padding:10px 20px 14px;font:12px Arial,sans-serif;color:${MUTED}">${esc(title)} &middot; ${esc(event.venue || "")}</td></tr>
 <tr><td style="font-size:0;line-height:0"><table width="100%" cellpadding="0" cellspacing="0"><tr>
   <td style="height:8px;background:${GREEN}">&nbsp;</td><td style="height:8px;background:#F2C230">&nbsp;</td><td style="height:8px;background:#E8382F">&nbsp;</td>
 </tr></table></td></tr>
 </table></td></tr></table></body></html>`;
+}
+
+const plain = (v) => String(v == null ? "" : v).replace(/\*\*(.+?)\*\*/g, "$1");
+
+export function buildEmailText(o) {
+  const { name, token, house, houseColour, challenge, message, spectator, event = {} } = o;
+  const title = ((event.name || "") + " " + (event.year || "")).trim();
+  const intro = plain(message || (spectator
+    ? `Your attendance as a spectator for ${title} is confirmed. We look forward to seeing you there!`
+    : `Your registration for ${title} is confirmed. You're in Team ${house || ""}.`));
+  const dress = ((spectator ? event.spectatorDressCode : event.dressCode) || [])
+    .map((d) => "- " + (houseColour && !spectator ? String(d).replace("your house colour", String(houseColour).toLowerCase()) : d));
+  const itin = ((spectator ? event.spectatorItinerary : event.emailItinerary) || []).map(([t, n]) => t + "  " + n);
+  return [
+    "Hi " + name + ",", "", intro, "", plain(event.qrNote || ""), "",
+    "YOUR REGISTRATION DETAILS",
+    "Full Name: " + name,
+    spectator ? "Attendee Type: Spectator" : "Representing House: " + (house || ""),
+    !spectator && challenge ? "Nominated Challenge: " + challenge : null,
+    "Date: " + (event.dateLong || ""), "Time: " + (event.eventTime || ""),
+    "Venue & Address: " + (event.venue || "") + ", " + (event.address || ""),
+    "Registration Counter: " + (event.counterTime || ""), "",
+    "Dress code:", ...dress, "",
+    !spectator && event.obstacleRemark ? "Obstacle challenge remark: " + plain(event.obstacleRemark) + "\n" : null,
+    "Parking: " + (event.parkingNote || ""),
+    ...(event.parkingRates || []).map(([k, v]) => "  " + v + " - " + k), "",
+    "Storage of personal belongings: " + (event.storageNote || ""), "",
+    "EVENT ITINERARY", ...itin, "",
+    !spectator && event.bonus ? "SPECIAL BONUS: " + plain(event.bonus) + " " + (event.bonusPoints || "") + "\n" : null,
+    "Your check-in code: " + token + " (QR code attached)",
+    "", title + " - " + (event.venue || ""),
+  ].filter((x) => x !== null).join("\n");
 }
