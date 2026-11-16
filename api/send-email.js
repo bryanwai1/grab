@@ -34,7 +34,7 @@ export default async function handler(req, res) {
   if (problems.length) return res.status(400).json({ ok: false, error: "Not sent: " + problems.join("; ") });
 
   const data = { name, token, house, houseHex, houseColour, challenge, message, spectator: !!spectator, event,
-    logoUrl: SITE_URL + "/hari-sukan-logo.png" };
+    logoUrl: SITE_URL + "/hari-sukan-logo.png", qrBase: SITE_URL };
   const html = buildEmailHtml(data);
   const text = buildEmailText(data);
   // QR also as an attached image: still there when the mail app blocks pictures,

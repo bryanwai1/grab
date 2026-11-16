@@ -18,7 +18,11 @@ const icon = (emoji, size = 32) =>
 export function buildEmailHtml(o) {
   const { name, token, house, houseHex, houseColour, challenge, logoUrl, message, spectator, event = {} } = o;
   const color = /^#[0-9a-f]{6}$/i.test(houseHex || "") ? houseHex : GREEN;
-  const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=" + encodeURIComponent(token || "");
+  // QR from our own site (/api/qr) when the site address is known (real emails);
+  // the admin preview falls back to a public generator.
+  const qrUrl = o.qrBase
+    ? o.qrBase + "/api/qr?c=" + encodeURIComponent(token || "")
+    : "https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=" + encodeURIComponent(token || "");
   const title = ((event.name || "") + " " + (event.year || "")).trim();
 
   const intro = String(message || (spectator
