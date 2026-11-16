@@ -46,7 +46,7 @@ export const EVENT = {
     ["9:00 AM", "Opening Ceremony Start"],
     ["10:30 AM", "Official Flag-Off & Competition Begins"],
     ["12:30 PM", "Lunch Break & Friday Prayers"],
-    ["2:30 PM", "Let the Battle Begin! Team War Cry & Tug of War"],
+    ["2:30 PM", "Let the Battle Begin! Team War Cry"],
     ["3:30 PM", "Award Ceremony"],
     ["4:00 PM", "End of event"],
   ],
@@ -57,7 +57,7 @@ export const EVENT = {
     ["9:00 AM", "Opening Ceremony Start"],
     ["10:00 AM", "Official Flag-Off & Competition Begins"], // Joanne's spectator draft says 10.00am; participant one says 10.30am
     ["12:30 PM", "Lunch Break & Friday Prayers"],
-    ["2:30 PM", "Let the Battle Begin! Team War Cry & Tug of War"],
+    ["2:30 PM", "Let the Battle Begin! Team War Cry"],
     ["3:30 PM", "Award Ceremony"],
     ["4:00 PM", "End of event"],
   ],
