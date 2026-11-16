@@ -150,7 +150,7 @@ function emailProblems(p, to, subject, message) {
 // Before every send: re-read the guest from the database and send ONLY what
 // is stored there, so a stale list or a mix-up can never put someone else's
 // name, house or QR in the email. Test sends (to = override) skip the lookup.
-async function sendPassEmail(p, { subject, message, to, cc } = {}) {
+async function sendPassEmail(p, { subject, message, to, cc, bcc } = {}) {
   let person = p;
   if (!to) {
     let fresh = null;
@@ -169,7 +169,7 @@ async function sendPassEmail(p, { subject, message, to, cc } = {}) {
     const r = await fetch("/api/send-email", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: (to || person.email).trim(), cc: cc || undefined, name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
+        to: (to || person.email).trim(), cc: cc || undefined, bcc: bcc && bcc.length ? bcc : undefined, name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
         challenge: person.nominated || "", spectator: isSpec(person),
         subject: subj, message: msg, event: EVENT,
       }),
@@ -1773,6 +1773,10 @@ function EmailCenter({ people, toast }) {
   const [testName, setTestName] = useState("");
   const [testHouse, setTestHouse] = useState("");
   const [testCc, setTestCc] = useState("");
+  const [bccText, setBccText] = useState(() => { try { return localStorage.getItem("grab_bcc") || ""; } catch (e) { return ""; } });
+  const setBcc = (v) => { setBccText(v); try { localStorage.setItem("grab_bcc", v); } catch (e) { /* ignore */ } };
+  const bccList = bccText.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+  const bccBad = bccList.some((x) => !EMAIL_RE.test(x));
   const [view, setView] = useState("participant");
   const [prog, setProg] = useState(null); // { done, total, ok, fail, errors }
   const stopRef = useRef(false);
@@ -1810,7 +1814,8 @@ function EmailCenter({ people, toast }) {
     if (ccList.some((x) => !EMAIL_RE.test(x))) return toast("Check the CC addresses", "bad");
     const t = { ...sample, name: testName.trim() || sample.name, house: testHouse || sample.house, department: "Test", token: "GRB-TEST00" };
     if (!isSpec(t) && !t.nominated) t.nominated = "Fitness Challenge (Main Participant)";
-    const r = await sendPassEmail(t, { subject: tpl.subject, message: msgFor(t, tpl), to: testTo.trim(), cc: ccList });
+    if (bccBad) return toast("Check the BCC addresses", "bad");
+    const r = await sendPassEmail(t, { subject: tpl.subject, message: msgFor(t, tpl), to: testTo.trim(), cc: ccList, bcc: bccList });
     toast(r.ok ? "Test sent to " + testTo.trim() + (ccList.length ? " (cc " + ccList.join(", ") + ")" : "") : r.error, r.ok ? "ok" : "bad");
   };
 
@@ -1827,7 +1832,9 @@ function EmailCenter({ people, toast }) {
       if (bad.length) issues.push((p.name || "(no name)") + ": " + bad.join("; "));
     });
     const warn = issues.length ? "\n\nCheck before sending - " + issues.length + " problem(s), these will NOT be sent:\n" + issues.slice(0, 12).join("\n") + (issues.length > 12 ? "\n..." : "") : "\n\nAll " + list.length + " records checked: names, emails, houses and pass codes look correct.";
-    if (!window.confirm("Send this email to " + list.length + " " + (list.length === 1 ? "person" : "people") + "?" + warn)) return;
+    if (bccBad) { toast("Check the BCC addresses", "bad"); return; }
+    const bccNote = bccList.length ? "\n\nBCC on every email: " + bccList.join(", ") + " (they will receive " + list.length + " copies)." : "";
+    if (!window.confirm("Send this email to " + list.length + " " + (list.length === 1 ? "person" : "people") + "?" + warn + bccNote)) return;
     stopRef.current = false;
     let ok = 0, fail = 0;
     const errors = [];
@@ -1835,7 +1842,7 @@ function EmailCenter({ people, toast }) {
     for (let i = 0; i < list.length; i++) {
       if (stopRef.current) { setProg((x) => ({ ...x, stopped: true })); return; }
       const p = list[i];
-      const r = await sendPassEmail(p, { subject: tpl.subject, message: msgFor(p, tpl) });
+      const r = await sendPassEmail(p, { subject: tpl.subject, message: msgFor(p, tpl), bcc: bccList });
       if (r.ok) { ok++; db.updatePerson(p.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); }
       else { fail++; errors.push(p.name + " - " + r.error); }
       setProg({ done: i + 1, total: list.length, ok, fail, errors: errors.slice() });
@@ -1892,6 +1899,9 @@ function EmailCenter({ people, toast }) {
             ))}
           </div>
         )}
+        <label className="field" style={{ marginTop: 12 }}><span className="field-label">BCC on every email sent (optional)</span>
+          <input className="input" value={bccText} onChange={(e) => setBcc(e.target.value)} placeholder="joanne@smartsolutionslearning.com" style={bccBad ? { borderColor: "#e8382f" } : null} />
+          <span className="hint">A hidden copy of each email goes here - recipients don't see it. Applies to tests and bulk sends. Leave empty for the real blast unless you want one copy per guest.</span></label>
         <p className="hint" style={{ marginTop: 12 }}>{recipients.length} recipient{recipients.length === 1 ? "" : "s"} selected - {sentCount}/{people.length} guests emailed so far.</p>
 
         <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>

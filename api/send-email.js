@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!RESEND_KEY) return res.status(200).json({ ok: false, skipped: true, error: "RESEND_KEY not set in Vercel" });
 
-  const { to, cc, name, token, house, houseHex, houseColour, challenge, subject, message, spectator, event = {} } = req.body || {};
+  const { to, cc, bcc, name, token, house, houseHex, houseColour, challenge, subject, message, spectator, event = {} } = req.body || {};
   if (!to || !name || !token) return res.status(400).json({ ok: false, error: "Missing fields" });
 
   // Second safety check on the server: refuse anything that would show wrong info.
@@ -24,6 +24,8 @@ export default async function handler(req, res) {
   const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
   const ccList = (Array.isArray(cc) ? cc : String(cc || "").split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean);
   if (ccList.length > 5 || ccList.some((x) => !EMAIL.test(x))) problems.push("invalid CC address");
+  const bccList = (Array.isArray(bcc) ? bcc : String(bcc || "").split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean);
+  if (bccList.length > 5 || bccList.some((x) => !EMAIL.test(x))) problems.push("invalid BCC address");
   const h = spectator ? (house === SPECTATOR.name ? SPECTATOR : null) : HOUSES.find((x) => x.name === house);
   if (!h) problems.push("unknown house");
   else if (spectator) { /* no colour to check */ }
@@ -51,6 +53,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         from: FROM_EMAIL, to: [String(to).trim()],
         ...(ccList.length ? { cc: ccList } : {}),
+        ...(bccList.length ? { bcc: bccList } : {}),
         ...(replyTo ? { reply_to: replyTo } : {}),
         text,
         ...(attachments ? { attachments } : {}),
