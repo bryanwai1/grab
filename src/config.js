@@ -108,7 +108,7 @@ export const DEPARTMENTS = [
 export const CHALLENGES = [
   { key: "fitness", name: "Fitness Challenge", short: "Fitness", type: "time", metric: "time", metricNote: "Best combined time - fastest wins", points: [500, 300, 200, 100], blurb: "Six timed stations - rowing, box jumps, battle ropes, wall balls, sled push and the plank hold. The clock runs from the first rep to the last.", venue: "Competition zone", time: "10:30", lead: true },
   { key: "obstacle", name: "Obstacle Challenge", short: "Obstacle", type: "time", metric: "time", metricNote: "Best time - fastest wins", points: [500, 300, 200, 100], blurb: "A team obstacle course. The fastest clean run wins.", venue: "Competition zone", time: "10:30" },
-  { key: "bingo", name: "Bingo Dash", short: "Bingo", type: "points", metric: "squares", metricNote: "Squares completed", points: [500, 300, 200], blurb: "Squares hidden around the venue. Complete the most to win.", venue: "Competition zone", time: "10:30" },
+  { key: "bingo", name: "Bingo Rush", short: "Bingo", type: "points", metric: "squares", metricNote: "Squares completed", points: [500, 300, 200, 100], blurb: "Squares hidden around the venue. Complete the most to win.", venue: "Competition zone", time: "10:30" },
   { key: "warcry", name: "War Cry", short: "War Cry", type: "winner", metric: "winner", metricNote: "Judges pick the winning house", points: [100], blurb: "Each house performs its war cry. The judges pick the best.", venue: "Main arena", time: "09:25" },
   { key: "tugm", name: "Tug of War (Male)", short: "Tug M", type: "winner", metric: "winner", metricNote: "Winning house", points: [200], blurb: "Male teams, knockout rounds.", venue: "Level 4 Sport Hall", time: "14:45" },
   { key: "tugf", name: "Tug of War (Female)", short: "Tug F", type: "winner", metric: "winner", metricNote: "Winning house", points: [200], blurb: "Female teams, knockout rounds.", venue: "Level 4 Sport Hall", time: "14:45" },
@@ -129,7 +129,7 @@ export const ITINERARY = [
   { time: "9.25am", name: "Team war cry", note: "" },
   { time: "9.45am", name: "Warm-up exercise", note: "" },
   { time: "10.00am", name: "Safety briefing and group photo", note: "" },
-  { time: "10.30am", name: "Competitions start", note: "Obstacles, Fitness Challenge and Bingo Dash. Until 12.30pm." },
+  { time: "10.30am", name: "Competitions start", note: "Obstacles, Fitness Challenge and Bingo Rush. Until 12.30pm." },
   { time: "12.30pm", name: "Lunch break and prayer", note: "Interactive games and photobooth at the lobby." },
   { time: "2.00pm", name: "Gather at Level 4 Sport Hall", note: "All participants." },
   { time: "2.30pm", name: "Team war cry", note: "" },

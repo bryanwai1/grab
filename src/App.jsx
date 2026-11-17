@@ -150,7 +150,7 @@ function emailProblems(p, to, subject, message) {
 // Before every send: re-read the guest from the database and send ONLY what
 // is stored there, so a stale list or a mix-up can never put someone else's
 // name, house or QR in the email. Test sends (to = override) skip the lookup.
-async function sendPassEmail(p, { subject, message, to, cc, bcc } = {}) {
+async function sendPassEmail(p, { subject, message, to, cc, bcc, event } = {}) {
   let person = p;
   if (!to) {
     let fresh = null;
@@ -171,7 +171,7 @@ async function sendPassEmail(p, { subject, message, to, cc, bcc } = {}) {
       body: JSON.stringify({
         to: (to || person.email).trim(), cc: cc || undefined, bcc: bcc && bcc.length ? bcc : undefined, name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour, department: person.department,
         challenge: person.nominated || "", spectator: isSpec(person),
-        subject: subj, message: msg, event: EVENT,
+        subject: subj, message: msg, event: event || EVENT,
       }),
     });
     const d = await r.json().catch(() => ({}));
@@ -1746,14 +1746,22 @@ function loadTpl() {
   } catch (e) { /* ignore */ }
   return { subject: TPL_PRESETS.confirm.subject, message: TPL_PRESETS.confirm.message, spectatorMessage: TPL_PRESETS.confirm.spectatorMessage };
 }
+// Itinerary editable in the Email tab: one line per row, "2:30 PM | Item".
+const itinToText = (rows) => (rows || []).map(([t, n]) => t + " | " + n).join("\n");
+const textToItin = (txt) => String(txt || "").split("\n").map((l) => l.split("|")).filter((a) => a.length >= 2 && a[0].trim() && a.slice(1).join("|").trim()).map((a) => [a[0].trim(), a.slice(1).join("|").trim()]);
+const eventFor = (tpl) => ({
+  ...EVENT,
+  emailItinerary: tpl.itin != null ? textToItin(tpl.itin) : EVENT.emailItinerary,
+  spectatorItinerary: tpl.spectatorItin != null ? textToItin(tpl.spectatorItin) : EVENT.spectatorItinerary,
+});
 const msgFor = (p, tpl) => (isSpec(p) ? tpl.spectatorMessage || TPL_PRESETS.confirm.spectatorMessage : tpl.message);
 
-function EmailPreview({ person, subject, message }) {
+function EmailPreview({ person, subject, message, event }) {
   const h = houseOf(person.house);
   const html = buildEmailHtml({
     name: person.name, token: person.token, house: h.name, houseHex: h.hex, houseColour: h.colour,
     challenge: person.nominated, spectator: isSpec(person), logoUrl: mailLogoUrl(),
-    message: fillTemplate(message, person), event: EVENT,
+    message: fillTemplate(message, person), event: event || EVENT,
   });
   return (
     <div className="mail">
@@ -1815,7 +1823,7 @@ function EmailCenter({ people, toast }) {
     const t = { ...sample, name: testName.trim() || sample.name, house: testHouse || sample.house, department: "Test", token: "GRB-TEST00" };
     if (!isSpec(t) && !t.nominated) t.nominated = "Fitness Challenge (Main Participant)";
     if (bccBad) return toast("Check the BCC addresses", "bad");
-    const r = await sendPassEmail(t, { subject: tpl.subject, message: msgFor(t, tpl), to: testTo.trim(), cc: ccList, bcc: bccList });
+    const r = await sendPassEmail(t, { subject: tpl.subject, message: msgFor(t, tpl), to: testTo.trim(), cc: ccList, bcc: bccList, event: eventFor(tpl) });
     toast(r.ok ? "Test sent to " + testTo.trim() + (ccList.length ? " (cc " + ccList.join(", ") + ")" : "") : r.error, r.ok ? "ok" : "bad");
   };
 
@@ -1842,7 +1850,7 @@ function EmailCenter({ people, toast }) {
     for (let i = 0; i < list.length; i++) {
       if (stopRef.current) { setProg((x) => ({ ...x, stopped: true })); return; }
       const p = list[i];
-      const r = await sendPassEmail(p, { subject: tpl.subject, message: msgFor(p, tpl), bcc: bccList });
+      const r = await sendPassEmail(p, { subject: tpl.subject, message: msgFor(p, tpl), bcc: bccList, event: eventFor(tpl) });
       if (r.ok) { ok++; db.updatePerson(p.id, { emailSentAt: new Date().toISOString() }).catch(() => {}); }
       else { fail++; errors.push(p.name + " - " + r.error); }
       setProg({ done: i + 1, total: list.length, ok, fail, errors: errors.slice() });
@@ -1861,7 +1869,7 @@ function EmailCenter({ people, toast }) {
         <p className="hint" style={{ marginBottom: 14 }}>Each email includes the guest's own QR pass, pass code and event details automatically.</p>
         <div className="tpl-presets">
           {Object.entries(TPL_PRESETS).map(([k, t]) => (
-            <button key={k} className="chip" onClick={() => window.confirm("Replace the current template with \"" + t.label + "\"?") && save({ subject: t.subject, message: t.message, spectatorMessage: t.spectatorMessage })}>{t.label}</button>
+            <button key={k} className="chip" onClick={() => window.confirm("Replace the current template with \"" + t.label + "\"?") && save({ ...tpl, subject: t.subject, message: t.message, spectatorMessage: t.spectatorMessage })}>{t.label}</button>
           ))}
         </div>
         <label className="field"><span className="field-label">Subject</span>
@@ -1870,6 +1878,14 @@ function EmailCenter({ people, toast }) {
           <textarea ref={msgRef} className="input" rows={5} value={tpl.message} onChange={(e) => save({ ...tpl, message: e.target.value })} /></label>
         <label className="field"><span className="field-label">Message - spectators</span>
           <textarea className="input" rows={4} value={tpl.spectatorMessage || ""} onChange={(e) => save({ ...tpl, spectatorMessage: e.target.value })} /></label>
+        <details className="field" style={{ marginTop: 6 }}>
+          <summary className="field-label" style={{ cursor: "pointer" }}>Edit itinerary in the email (one line per row: <code>2:30 PM | Item</code>)</summary>
+          <label className="field" style={{ marginTop: 10 }}><span className="field-label">Itinerary - participants</span>
+            <textarea className="input" rows={9} style={{ fontFamily: "monospace", fontSize: 13 }} value={tpl.itin != null ? tpl.itin : itinToText(EVENT.emailItinerary)} onChange={(e) => save({ ...tpl, itin: e.target.value })} /></label>
+          <label className="field"><span className="field-label">Itinerary - spectators</span>
+            <textarea className="input" rows={9} style={{ fontFamily: "monospace", fontSize: 13 }} value={tpl.spectatorItin != null ? tpl.spectatorItin : itinToText(EVENT.spectatorItinerary)} onChange={(e) => save({ ...tpl, spectatorItin: e.target.value })} /></label>
+          <p className="hint">The lunch-break activities box appears under any row containing "Lunch". <button type="button" className="linkish" onClick={() => { const n = { ...tpl }; delete n.itin; delete n.spectatorItin; save(n); }}>Reset to default</button></p>
+        </details>
         <div className="tpl-fields">
           <span className="hint">Insert:</span>
           {EMAIL_FIELDS.map((f) => <button key={f} className="btn btn-ghost btn-xs" onClick={() => insert(f)}>{"{" + f + "}"}</button>)}
@@ -1937,7 +1953,7 @@ function EmailCenter({ people, toast }) {
           <button className="chip" aria-pressed={view === "spectator"} onClick={() => setView("spectator")}>Spectator email</button>
         </div>
         <div className="field-label" style={{ marginBottom: 10 }}>Live preview - {sample.name}</div>
-        <EmailPreview person={sample} subject={tpl.subject} message={msgFor(sample, tpl)} />
+        <EmailPreview person={sample} subject={tpl.subject} message={msgFor(sample, tpl)} event={eventFor(tpl)} />
       </div>
     </div>
   );

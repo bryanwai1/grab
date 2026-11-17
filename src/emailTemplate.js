@@ -70,7 +70,7 @@ export function buildEmailHtml(o) {
   const itinRows = (spectator ? event.spectatorItinerary : event.emailItinerary) || event.emailItinerary || [];
   const itin = itinRows.map(([t, n]) => `<tr>
       <td width="70" valign="top" style="padding:5px 12px;border-bottom:1px solid #d7e6dc;font:700 12px Arial,sans-serif;color:${INK};white-space:nowrap">${esc(t)}</td>
-      <td valign="top" style="padding:5px 12px 5px 0;border-bottom:1px solid #d7e6dc;font:12px Arial,sans-serif;color:${INK}">${esc(n)}${n === event.lunchRow ? lunch : ""}</td></tr>`).join("");
+      <td valign="top" style="padding:5px 12px 5px 0;border-bottom:1px solid #d7e6dc;font:12px Arial,sans-serif;color:${INK}">${esc(n)}${/lunch/i.test(n) ? lunch : ""}</td></tr>`).join("");
 
 
   const logo = /^https?:\/\//.test(logoUrl || "")
