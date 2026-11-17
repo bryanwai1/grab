@@ -2461,6 +2461,7 @@ function ImportList({ people, toast }) {
   const [prog, setProg] = useState(null);
   const [result, setResult] = useState(null);
   const [sqlNeeded, setSqlNeeded] = useState(false);
+  const [updateExisting, setUpdateExisting] = useState(false);
   const known = useMemo(() => new Set(people.map((p) => p.email)), [people]);
 
   const read = async (f) => {
@@ -2497,19 +2498,24 @@ function ImportList({ people, toast }) {
     } catch (e) { toast("Couldn't read that file: " + e.message, "bad"); }
   };
 
-  const good = (rows || []).filter((r) => !r.problems.length);
+  const valid = (rows || []).filter((r) => !r.problems.length);
+  const newOnes = valid.filter((r) => !r.update);
+  const already = valid.filter((r) => r.update);
+  const good = updateExisting ? valid : newOnes;
   const run = async () => {
     if (!good.length) return;
-    if (!window.confirm("Import " + good.length + " guests?\n\n" + good.filter((r) => !r.update).length + " new, " + good.filter((r) => r.update).length + " updated (existing pass codes are kept). No emails are sent.")) return;
+    const msg = updateExisting
+      ? "Import " + good.length + " guests?\n\n" + newOnes.length + " new will be added.\n" + already.length + " already in the system will have their details UPDATED (pass codes kept)."
+      : "Add " + newOnes.length + " new guests?\n\n" + already.length + " are already in the system and will be SKIPPED (no duplicates).";
+    if (!window.confirm(msg + "\n\nNo emails are sent.")) return;
     setBusy(true); setProg({ done: 0, total: good.length });
     try {
-      const r = await db.importPeople(good, (done, total) => setProg({ done, total }));
+      const r = await db.importPeople(good, (done, total) => setProg({ done, total }), { updateExisting });
       setResult(r);
       if (r.failed.some((f) => /nominated|check constraint|house_check/i.test(f.error))) setSqlNeeded(true);
-      toast("Imported: " + r.added + " new, " + r.updated + " updated" + (r.failed.length ? ", " + r.failed.length + " failed" : ""), r.failed.length ? "bad" : "ok");
+      toast("Imported: " + r.added + " new" + (r.skipped ? ", " + r.skipped + " already there (skipped)" : "") + (r.updated ? ", " + r.updated + " updated" : "") + (r.failed.length ? ", " + r.failed.length + " failed" : ""), r.failed.length ? "bad" : "ok");
     } finally { setBusy(false); }
   };
-  const counts = { spec: good.filter((r) => r.house === SPECTATOR.key).length };
 
   return (
     <div className="bk-stack">
@@ -2536,7 +2542,7 @@ function ImportList({ people, toast }) {
         <div className="panel">
           <div className="cs-head">
             <h3>{file}</h3>
-            <span className="hint" style={{ marginLeft: "auto" }}>{rows.length} rows - {good.length} ready ({counts.spec} spectators) - {rows.length - good.length} with problems</span>
+            <span className="hint" style={{ marginLeft: "auto" }}><b>{newOnes.length} new</b> - {already.length} already in system - {rows.length - valid.length} with problems</span>
           </div>
           <div style={{ overflowX: "auto", marginTop: 12, maxHeight: 460 }}>
             <table className="grid">
@@ -2549,7 +2555,7 @@ function ImportList({ people, toast }) {
                       <td>{r.line}</td><td style={{ fontWeight: 700 }}>{r.name}</td><td>{r.email}</td><td>{r.department}</td><td>{r.phone}</td>
                       <td>{h ? <span style={{ color: h.hex, fontWeight: 700 }}>{h.name}</span> : "-"}</td>
                       <td>{r.nominated}</td>
-                      <td>{r.problems.length ? <b className="bad-txt">{r.problems.join(", ")}</b> : r.update ? "Update" : "New"}</td>
+                      <td>{r.problems.length ? <b className="bad-txt">{r.problems.join(", ")}</b> : r.update ? (updateExisting ? "Already in - update" : <span style={{ color: "var(--ink-3)" }}>Already in - skip</span>) : <b className="ok-txt">New</b>}</td>
                     </tr>
                   );
                 })}
@@ -2558,8 +2564,9 @@ function ImportList({ people, toast }) {
           </div>
           <div className="cs-bar" style={{ marginTop: 14 }}>
             {prog && <span className="hint">{prog.done}/{prog.total} saved</span>}
-            {result && <span className="hint">{result.added} added, {result.updated} updated{result.failed.length ? ", " + result.failed.length + " failed: " + result.failed.slice(0, 3).map((f) => f.email + " (" + f.error + ")").join("; ") : ""}</span>}
-            <button className="btn btn-ink" style={{ marginLeft: "auto" }} disabled={busy || !good.length} onClick={run}>{busy ? "Importing..." : "Import " + good.length + " guests"}</button>
+            <label className="cs-check" style={{ marginTop: 0 }}><input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />Also update details of people already in the system</label>
+            {result && <span className="hint">{result.added} added, {result.skipped || 0} skipped (already there), {result.updated} updated{result.failed.length ? ", " + result.failed.length + " failed: " + result.failed.slice(0, 3).map((f) => f.email + " (" + f.error + ")").join("; ") : ""}</span>}
+            <button className="btn btn-ink" style={{ marginLeft: "auto" }} disabled={busy || !good.length} onClick={run}>{busy ? "Importing..." : updateExisting ? "Import " + good.length + " guests" : "Add " + good.length + " new guests"}</button>
           </div>
         </div>
       )}

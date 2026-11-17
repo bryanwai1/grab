@@ -406,8 +406,8 @@ alter table grab_people drop constraint if exists grab_people_house_check;
 alter table grab_people add constraint grab_people_house_check
   check (house in ('blue','red','green','yellow','spectator'));`;
 
-export async function importPeople(rows, onProgress = () => {}) {
-  const out = { added: 0, updated: 0, failed: [] };
+export async function importPeople(rows, onProgress = () => {}, { updateExisting = false } = {}) {
+  const out = { added: 0, updated: 0, skipped: 0, failed: [] };
   const existing = {};
   (await loadAll()).people.forEach((p) => (existing[p.email] = p));
   let done = 0;
@@ -415,6 +415,8 @@ export async function importPeople(rows, onProgress = () => {}) {
   for (const r of rows) {
     const email = normEmail(r.email);
     let attempt = 0;
+    // Already in the system (checked against the live database): skip unless asked to update.
+    if (existing[email] && !updateExisting) { out.skipped++; onProgress(++done, rows.length); continue; }
     // Retry a row up to 4 times on a connection blip (phone/Wi-Fi) before giving up.
     // eslint-disable-next-line no-constant-condition
     while (true) {
