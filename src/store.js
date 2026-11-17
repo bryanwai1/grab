@@ -411,8 +411,14 @@ export async function importPeople(rows, onProgress = () => {}) {
   const existing = {};
   (await loadAll()).people.forEach((p) => (existing[p.email] = p));
   let done = 0;
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   for (const r of rows) {
     const email = normEmail(r.email);
+    let attempt = 0;
+    // Retry a row up to 4 times on a connection blip (phone/Wi-Fi) before giving up.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+
     const fields = { name: String(r.name).trim(), department: String(r.department || "").trim() || "-", phone: String(r.phone || "").trim(), house: r.house, nominated: String(r.nominated || "").trim() };
     try {
       const ex = existing[email];
@@ -432,11 +438,18 @@ export async function importPeople(rows, onProgress = () => {}) {
           ({ error } = await supa.from("grab_people").insert({ ...fields, email, token: newToken() }));
           if (!error || !/token/i.test(error.message || "")) break;
         }
+        // A retry after a lost reply can find the row already saved: that's a success.
+        if (error && attempt > 0 && /email/i.test(error.message || "") && (error.code === "23505" || /duplicate/i.test(error.message || ""))) error = null;
         if (error) throw error;
         out.added++;
       }
+      break;
     } catch (e) {
-      out.failed.push({ email, error: String((e && e.message) || e) });
+      const msg = String((e && e.message) || e);
+      if (/fetch|network|timeout|load failed/i.test(msg) && attempt < 4) { attempt++; await wait(800 * attempt); continue; }
+      out.failed.push({ email, error: msg });
+      break;
+    }
     }
     onProgress(++done, rows.length);
   }
