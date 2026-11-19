@@ -347,6 +347,18 @@ export async function removeScore(id) {
   if (error) throw error;
 }
 
+// Wipes every score row (all times and points) so every house is back to 0.
+export async function clearScores() {
+  if (!supa) {
+    const db = readDb();
+    db.scores = [];
+    writeDb(db);
+    return;
+  }
+  const { error } = await supa.from("grab_scores").delete().gt("id", 0);
+  if (error) throw error;
+}
+
 export function resetDemo() {
   if (supa) return;
   try { localStorage.removeItem(DB_KEY); } catch (e) { /* ignore */ }

@@ -51,7 +51,7 @@ function rankChallenge(c, totals) {
     .filter((r) => r.v !== undefined && scored(c, r.v))
     .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
     .map((r, i) => {
-      const base = c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
+      const base = c.type === "points" ? r.v : c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
       if (c.scoring === "countdown" && c.zeroOver && overLimit(c, r.v)) return { ...r, rank: i + 1, lost: base, pts: 0, late: true };
       const lost = deduction(c, r.v);
       return { ...r, rank: i + 1, lost, pts: Math.max(0, base - lost) };
@@ -61,6 +61,7 @@ function ruleText(c) {
   const pts = ptsFor(c);
   if (c.type === "winner") return "Winner +" + pts[0];
   if (c.type === "time" && c.scoring === "countdown") return (c.start || 0) + " pts, -" + c.lose + " per " + (Number(c.every) === 1 ? "minute" : c.every + " min") + (c.zeroOver && c.limit ? ", 0 if over " + c.limit + " min" : "");
+  if (c.type === "points") return "Score = points";
   let t = pts.join(" / ");
   if (c.type === "time" && c.scoring === "penalty") t += ", -" + c.lose + " every " + c.every + " min over " + (c.limit || 0) + " min";
   return t;
@@ -339,7 +340,7 @@ function Nav({ page, go }) {
     if (logoTaps >= 5) { logoTaps = 0; setStaffMode(); }
     go("home");
   };
-  const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["agenda", "Agenda"], ["scores", "Live scores"], ["staff", "Staff"], ["admin", "Admin"]];
+  const items = [["home", "Home"], ["rsvp", "RSVP"], ["pass", "My pass"], ["agenda", "Agenda"], ["scores", "Live scores"], ["awards", "Awards"], ["staff", "Staff"], ["admin", "Admin"]];
   const active = page === "checkin" || page === "gift" ? "staff" : page;
   return (
     <nav className="nav">
@@ -383,7 +384,7 @@ function Ticker({ totals, go }) {
             return (
               <button key={c.key} className="ticker-chip" onClick={() => go("scores")}>
                 <span className="chip-dot" style={{ background: lead.h.hex }} />
-                {c.short} {lead.h.name} {showValue(c, lead.v)}
+                <span className="chip-ch">{c.short}</span> <b className="chip-house">{lead.h.name}</b> <span className="chip-val">{showValue(c, lead.v)}</span>
               </button>
             );
           })}
@@ -1412,6 +1413,7 @@ function Scores({ totals, standings, go, arg, tv }) {
               );
             })}
             <button className={"switch-btn" + (rotating ? " on" : "")} onClick={() => setBoard("rotate")}>Rotate</button>
+            <button className="switch-btn" onClick={() => go("awards")}>Awards</button>
             <button className="switch-btn switch-exit" onClick={() => setPicker(true)}>Screen setup</button>
             <button className="switch-btn" onClick={() => go("home")}>Exit</button>
           </div>
@@ -1459,6 +1461,169 @@ function Scores({ totals, standings, go, arg, tv }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ================= awards: 4 slides, 4th place up to 1st ================= */
+
+const MASCOT = { blue: "blue", red: "red", green: "purple", yellow: "yellow" };
+const PLACE_WORD = ["1st", "2nd", "3rd", "4th"];
+const MEDAL_STYLE = {
+  1: { word: "FIRST", c: ["#fff6c4", "#ffd23f", "#a97800"], glow: "255,210,63" },
+  2: { word: "SECOND", c: ["#ffffff", "#dde5e9", "#7f8c93"], glow: "228,236,239" },
+  3: { word: "THIRD", c: ["#ffd9b8", "#e5944f", "#7d4219"], glow: "240,166,101" },
+  4: { word: "FOURTH", c: ["#e6f8ff", "#6cc9ff", "#14608f"], glow: "110,200,255" },
+};
+function Medal({ place }) {
+  const m = MEDAL_STYLE[place];
+  const id = "awm" + place;
+  return (
+    <svg className="aw-medal" viewBox="0 0 200 270" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={m.c[0]} /><stop offset=".5" stopColor={m.c[1]} /><stop offset="1" stopColor={m.c[2]} /></linearGradient>
+        <linearGradient id={id + "r"} x1="1" y1="1" x2="0" y2="0"><stop offset="0" stopColor={m.c[0]} /><stop offset=".55" stopColor={m.c[1]} /><stop offset="1" stopColor={m.c[2]} /></linearGradient>
+      </defs>
+      <polygon points="50,0 106,0 136,112 80,112" fill="#00b14f" />
+      <polygon points="150,0 94,0 64,112 120,112" fill="#008b3e" />
+      <polygon points="76,0 94,0 114,112 96,112" fill="#fff" opacity=".85" />
+      <circle cx="100" cy="178" r="88" fill={"url(#" + id + ")"} stroke="rgba(0,0,0,.22)" strokeWidth="3" />
+      <circle cx="100" cy="178" r="80" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="4" strokeDasharray="1 9" strokeLinecap="round" />
+      <circle cx="100" cy="178" r="64" fill={"url(#" + id + "r)"} stroke="rgba(255,255,255,.7)" strokeWidth="3" />
+      <path d="M46 150A64 64 0 0 1 98 114" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="7" strokeLinecap="round" />
+      <text x="102" y="214" textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="100" fill="rgba(255,255,255,.7)">{place}</text>
+      <text x="100" y="211" textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="100" fill={m.c[2]} stroke={m.c[2]} strokeWidth="3" strokeLinejoin="round">{place}</text>
+    </svg>
+  );
+}
+const mascotSrc = (key) => (process.env.PUBLIC_URL || "") + "/mascots/" + (MASCOT[key] || "blue") + ".webp";
+
+function Awards({ totals, standings, go, tv }) {
+  const [step, setStep] = useState(0); // 0 = intro slide, 1 = 4th place ... 4 = 1st place
+  const ranked = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
+  const waiting = ranked.every((r) => r.s.total === 0);
+  const subs = CHALLENGES.filter((c) => c.type !== "winner").slice(0, 3);
+  const rest = CHALLENGES.filter((c) => subs.indexOf(c) < 0);
+  const [full, setFull] = useState(false);
+  const canFull = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  const toggleFull = () => {
+    try {
+      const d = document, el = d.documentElement;
+      const on = d.fullscreenElement || d.webkitFullscreenElement;
+      const p = on ? (d.exitFullscreen || d.webkitExitFullscreen).call(d) : (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* ignore */ }
+  };
+  useEffect(() => {
+    const on = () => setFull(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener("fullscreenchange", on);
+    document.addEventListener("webkitfullscreenchange", on);
+    on();
+    return () => { document.removeEventListener("fullscreenchange", on); document.removeEventListener("webkitfullscreenchange", on); };
+  }, []);
+  const intro = step === 0;
+  const place = 5 - step;
+  const entry = ranked[intro ? 0 : place - 1];
+  const next = () => setStep((n) => Math.min(4, n + 1));
+  const prev = () => setStep((n) => Math.max(0, n - 1));
+
+  useEffect(() => {
+    const on = (e) => {
+      const t = e.target && e.target.tagName;
+      if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
+      if (e.key === "ArrowRight" || e.key === "PageDown" || (e.key === " " && t !== "BUTTON")) { e.preventDefault(); next(); }
+      else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); prev(); }
+      else if (e.key === "f" || e.key === "F") toggleFull();
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { window.scrollTo(0, 0); }, [step]);
+
+  const subRow = (c) => {
+    const r = rankChallenge(c, totals).find((x) => x.h.key === entry.h.key);
+    return r ? { rank: r.rank, pts: r.pts, v: r.v } : null;
+  };
+  const subRows = subs.map((c) => ({ c, r: subRow(c) }));
+  const subSum = subRows.reduce((a, x) => a + (x.r ? x.r.pts : 0), 0);
+  const other = Math.max(0, entry.s.total - subSum);
+  const otherNames = rest.map((c) => c.short).concat(["Early sign-in"]).join(", ");
+
+  return (
+    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (tv ? " tv" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
+      <div className="aw-bg" />
+      <Particles className="stage-canvas" density={!intro && place === 1 && !waiting ? 70 : 20} confetti={!intro && place === 1 && !waiting} />
+      <div className="aw-in">
+        <header className="aw-head">
+          {intro ? <span className="aw-logo-gap" /> : <Badge height={46} />}
+          <div className="aw-live"><span className="live-dot" />Live ranking - updates automatically</div>
+          <div className="aw-head-btns">
+            {canFull && <button className="switch-btn aw-full" onClick={toggleFull}>{full ? "Exit full screen" : "Full screen"}</button>}
+            {!tv && <button className="switch-btn" onClick={() => go("scores")}>Live scores</button>}
+            {!tv && <button className="switch-btn" onClick={() => go("home")}>Exit</button>}
+          </div>
+        </header>
+
+        {intro ? (
+          <section key="intro" className="aw-title">
+            <Badge height={150} style={{ height: "clamp(100px, 24vh, 240px)", width: "auto" }} />
+            <h1 className="aw-title-main">AWARDS</h1>
+            <div className="aw-title-sub">House Cup - 4th place to 1st place</div>
+            <div className="aw-title-crew">
+              {HOUSES.map((h) => (
+                <div key={h.key} className="aw-crew" style={{ "--team": h.hex }}>
+                  <img src={mascotSrc(h.key)} alt={h.name + " mascot"} />
+                  <span>{h.name}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : waiting ? (
+          <div className="aw-wait">
+            <div className="aw-wait-title">Awards open once the first scores are in</div>
+            <p>The 4th to 1st place slides fill in by themselves as points come in.</p>
+          </div>
+        ) : (
+          <section key={step + entry.h.key} className="aw-slide">
+            <div className="aw-left">
+              <div className="aw-place" aria-label={PLACE_WORD[place - 1] + " place"}>
+                <div className="aw-medal-wrap"><Medal place={place} /></div>
+                <div className="aw-place-text">
+                  <span className="aw-place-word">{MEDAL_STYLE[place].word}</span>
+                  <span className="aw-place-sub">PLACE</span>
+                </div>
+              </div>
+              <h1 className="aw-team">{entry.h.name}</h1>
+              <div className="aw-total">
+                <span className="aw-total-label">TOTAL POINTS</span>
+                <Counter className="aw-total-num num" value={entry.s.total} />
+              </div>
+            </div>
+
+            <div className="aw-mid">
+              <div className="aw-halo" />
+              <img className="aw-mascot" src={mascotSrc(entry.h.key)} alt={entry.h.name + " mascot"} />
+            </div>
+
+            <div className="aw-right">
+              {subRows.map(({ c, r }) => (
+                <div key={c.key} className={"aw-sub" + (r ? " aw-r" + r.rank : "") + (c.type === "time" ? " aw-sub-has-time" : "")}>
+                  <div className="aw-sub-name">{c.name}</div>
+                  <div className="aw-sub-place"><small>PLACE</small><span>{r ? PLACE_WORD[r.rank - 1].toUpperCase() : "-"}</span></div>
+                  {c.type === "time" && <div className="aw-sub-time"><small>TIME</small><span>{r ? <>{fmtTime(r.v).slice(0, -3)}<i className="aw-cs">.{fmtTime(r.v).slice(-2)}</i></> : "--:--"}</span></div>}
+                  <div className="aw-sub-pts"><small>POINTS</small><span>{r ? "+" + r.pts : "0"}</span></div>
+                </div>
+              ))}
+              <div className="aw-other"><span>{otherNames}</span><strong className="num">+{other}</strong></div>
+            </div>
+          </section>
+        )}
+
+        <nav className="aw-ctrl" aria-label="Award slides">
+          <button className="switch-btn aw-btn" onClick={prev} disabled={step === 0}>Back</button>
+          <button className="switch-btn aw-btn aw-next" onClick={next} disabled={step === 4}>{step === 4 ? "Champions!" : step === 0 ? "Start the awards" : "Reveal " + PLACE_WORD[3 - step] + " place"}</button>
+        </nav>
       </div>
     </div>
   );
@@ -1959,7 +2124,7 @@ function EmailCenter({ people, toast }) {
   );
 }
 
-function ScoreEntry({ totals, toast }) {
+function ScoreEntry({ totals, scores, people, toast }) {
   const [pick, setChallenge] = useState(CHALLENGES[0].key);
   const challenge = CHALLENGES.some((x) => x.key === pick) ? pick : CHALLENGES[0].key;
   const [house, setHouse] = useState("red");
@@ -1991,6 +2156,17 @@ function ScoreEntry({ totals, toast }) {
         : (n > 0 ? "+" : "") + n + " to " + houseOf(house).name + " on " + c.name, "ok");
       setPoints(""); setNote("");
     } catch (e) { setErr("Could not save. Try again."); }
+  };
+
+  const resetAll = async () => {
+    const typed = window.prompt("This deletes ALL scores and times for every challenge and sets every house back to 0.\n\nA backup of the current scores is saved first (Backup & export tab).\n\nType RESET to confirm.");
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== "RESET") return toast("Reset cancelled - you did not type RESET", "bad");
+    try {
+      db.saveSnapshot(people, scores, { rolling: true });
+      await db.clearScores();
+      toast("All scores and times reset to 0", "ok");
+    } catch (e) { toast("Could not reset scores. Try again.", "bad"); }
   };
 
   const ranked = rankChallenge(c, totals);
@@ -2025,7 +2201,7 @@ function ScoreEntry({ totals, toast }) {
           <span className="field-label">{c.metricNote}</span>
           <input className="input" inputMode={isTime ? "text" : "numeric"} value={points}
             onChange={(e) => { setPoints(e.target.value); if (err) setErr(""); }}
-            placeholder={isTime ? "45:30" : "Negative numbers deduct"} />
+            placeholder={isTime ? "45:30" : "Points to add (use - to deduct)"} />
           {isTime && <p className="hint">Minutes : seconds (e.g. 45:30 or 75:00 for 1h15). Hundredths optional (4:50:10). The fastest time a house logs is the one that counts.</p>}
         </label>}
         <label className="field">
@@ -2034,6 +2210,7 @@ function ScoreEntry({ totals, toast }) {
         </label>
         {err && <p className="err">{err}</p>}
         <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={submit}>{c.type === "winner" ? "Mark " + houseOf(house).name + " as winner" : "Post to scoreboard"}</button>
+        <button className="btn btn-ghost btn-sm score-reset" style={{ width: "100%", marginTop: 14 }} onClick={resetAll}>Reset all scores and times to 0</button>
       </div>
       <div className="panel">
         <h3 style={{ fontSize: 24, marginBottom: 5 }}>{c.name}</h3>
@@ -2044,7 +2221,7 @@ function ScoreEntry({ totals, toast }) {
             <span className="chip-dot" style={{ background: r.h.hex }} />
             <span style={{ flex: 1, fontWeight: 700 }}>{r.h.name}</span>
             <span className="num" style={{ fontSize: isTime ? 20 : 24 }}>{showValue(c, r.v)}</span>
-            <span className="num" style={{ width: 96, textAlign: "right", color: "var(--ink-3)", fontSize: 14 }}>{earned[r.h.key] ? "+" + earned[r.h.key].pts + (earned[r.h.key].lost ? " (-" + earned[r.h.key].lost + ")" : "") : ""}</span>
+            {c.type !== "points" && <span className="num" style={{ width: 96, textAlign: "right", color: "var(--ink-3)", fontSize: 14 }}>{earned[r.h.key] ? "+" + earned[r.h.key].pts + (earned[r.h.key].lost ? " (-" + earned[r.h.key].lost + ")" : "") : ""}</span>}
           </div>
         ))}
       </div>
@@ -2363,7 +2540,7 @@ function ChallengeSetup({ scores, settingsInfo, toast }) {
             )}
 
             <div className="cs-grid">
-              {!(isTime && c.scoring === "countdown") && (
+              {!(isTime && c.scoring === "countdown") && c.type !== "points" && (
                 <label className="field"><span className="field-label">{c.type === "winner" ? "Points for the winner" : "Points for 1st, 2nd, 3rd, 4th"}</span>
                   <input className="input" value={c.pointsText} onChange={(e) => edit(i, { pointsText: e.target.value })} placeholder={c.type === "winner" ? "100" : "500, 300, 200, 100"} /></label>
               )}
@@ -2598,7 +2775,7 @@ function Admin({ people, scores, totals, standings, bonus, health, settingsInfo,
       {tab === "import" && <ImportList people={people} toast={toast} />}
       {tab === "in" && <PeopleIn people={people} go={go} />}
       {tab === "email" && <EmailCenter people={people} toast={toast} />}
-      {tab === "score" && <ScoreEntry totals={totals} toast={toast} />}
+      {tab === "score" && <ScoreEntry totals={totals} scores={scores} people={people} toast={toast} />}
       {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
       {tab === "setup" && <ChallengeSetup scores={scores} settingsInfo={settingsInfo} toast={toast} />}
       {tab === "backup" && <BackupPanel people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} toast={toast} />}
@@ -2767,6 +2944,7 @@ export default function App() {
   const { page, arg } = route;
   const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;
 
+  if (page === "awards") return <><Awards totals={totals} standings={standings} go={go} tv={arg === "tv" || route.extra === "tv"} />{toastEl}</>;
   if (page === "scores") return <><Scores totals={totals} standings={standings} go={go} arg={arg} tv={route.extra === "tv"} />{toastEl}</>;
 
   let body;
