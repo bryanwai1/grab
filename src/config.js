@@ -114,9 +114,6 @@ export const CHALLENGES = [
   { key: "tugf", name: "Tug of War (Female)", short: "Tug F", type: "winner", metric: "winner", metricNote: "Winning house", points: [200], blurb: "Female teams, knockout rounds.", venue: "Level 4 Sport Hall", time: "14:45" },
 ];
 
-// Whole house signed in (every RSVP'd member checked in) before this time earns the bonus. Counted automatically.
-export const EARLY_BONUS = { points: 300, before: "08:30", label: "Early sign-in bonus" };
-
 export const RANK_POINTS = [4, 3, 2, 1];
 
 // From Itinerary Hari Sukan 2026.pdf (public/itinerary-hari-sukan-2026.pdf)

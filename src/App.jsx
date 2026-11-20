@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { buildEmailHtml } from "./emailTemplate";
-import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, EARLY_BONUS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN, SITE_URL, SPECTATOR } from "./config";
+import { EVENT, HOUSES, DEPARTMENTS, CHALLENGES, RANK_POINTS, ITINERARY, ITINERARY_PDF, ADMIN_PASSWORD, STAFF_PIN, SITE_URL, SPECTATOR } from "./config";
 import * as db from "./store";
 
 /* ================= helpers ================= */
@@ -84,24 +84,6 @@ function applySettings(st) {
   CHALLENGES.splice(0, CHALLENGES.length, ...list);
   const r = st && st.display && Number(st.display.rotateSecs);
   DISPLAY.rotateSecs = ROTATE_CHOICES.includes(r) ? r : 20;
-}
-// Time of day in Malaysia, as minutes after midnight.
-const myMinutes = (iso) => {
-  const t = new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-};
-// Early sign-in bonus: every RSVP'd member of the house checked in before EARLY_BONUS.before.
-function earlyBonus(people) {
-  const [bh, bm] = EARLY_BONUS.before.split(":").map(Number);
-  const cut = bh * 60 + bm;
-  const out = {};
-  HOUSES.forEach((h) => {
-    const team = people.filter((p) => p.house === h.key);
-    const inTime = team.filter((p) => p.checkedInAt && myMinutes(p.checkedInAt) < cut).length;
-    out[h.key] = { team: team.length, inTime, earned: team.length > 0 && inTime === team.length };
-  });
-  return out;
 }
 const houseOf = (k) => (k === SPECTATOR.key ? SPECTATOR : HOUSES.find((h) => h.key === k) || HOUSES[0]);
 const isSpec = (p) => !!p && p.house === SPECTATOR.key;
@@ -1293,7 +1275,6 @@ function OverallBoard({ standings }) {
           {CHALLENGES.map((c) => (
             <span key={c.key} className="pip">{c.short} <strong>{leader.s.per[c.key]}</strong></span>
           ))}
-          <span className="pip">Early <strong>{leader.s.per.bonus}</strong></span>
         </div>
       </div>
 
@@ -1307,7 +1288,6 @@ function OverallBoard({ standings }) {
               {CHALLENGES.map((c) => (
                 <span key={c.key} className="pip pip-sm">{c.short} {r.s.per[c.key]}</span>
               ))}
-              <span className="pip pip-sm">Early {r.s.per.bonus}</span>
             </span>
             <span className="big-gap-pill">-{leader.s.total - r.s.total}</span>
             <span className="big-lane-score num"><Counter value={r.s.total} /></span>
@@ -1425,7 +1405,7 @@ function Scores({ totals, standings, go, arg, tv }) {
             <div className="board-where">
               <span className="live-dot" />
               {isOverall
-                ? CHALLENGES.map((c) => c.short + " " + ruleText(c)).join(" - ") + " - whole house in before " + EARLY_BONUS.before + " +" + EARLY_BONUS.points
+                ? CHALLENGES.map((c) => c.short + " " + ruleText(c)).join(" - ")
                 : [challenge.venue, challenge.time, challenge.limit ? challenge.limit + " min limit" : "", challenge.metricNote, ruleText(challenge)].filter(Boolean).join(" - ")}
             </div>
           </div>
@@ -1547,9 +1527,8 @@ function Awards({ totals, standings, go, tv }) {
     return r ? { rank: r.rank, pts: r.pts, v: r.v } : null;
   };
   const subRows = subs.map((c) => ({ c, r: subRow(c) }));
-  const subSum = subRows.reduce((a, x) => a + (x.r ? x.r.pts : 0), 0);
-  const other = Math.max(0, entry.s.total - subSum);
-  const otherNames = rest.map((c) => c.short).concat(["Early sign-in"]).join(", ");
+  // The other sections this house scored in, one by one (their points come straight from the standings). Zeros are left out.
+  const otherRows = rest.map((c) => ({ key: c.key, name: c.short, pts: entry.s.per[c.key] || 0 })).filter((o) => o.pts > 0);
 
   return (
     <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
@@ -1618,7 +1597,16 @@ function Awards({ totals, standings, go, tv }) {
                   <div className="aw-sub-pts"><small>POINTS</small><span>{r ? "+" + r.pts : "0"}</span></div>
                 </div>
               ))}
-              <div className="aw-other"><span>{otherNames}</span><strong className="num">+{other}</strong></div>
+              {otherRows.length > 0 && (
+                <div className="aw-other" aria-label="Points from the other sections">
+                  {otherRows.map((o) => (
+                    <div key={o.key} className="aw-other-item aw-other-on">
+                      <span>{o.name}</span>
+                      <strong className="num">+{o.pts}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -2303,7 +2291,7 @@ function challengeResults(totals) {
   return CHALLENGES.map((c) => ({ c, rows: rankChallenge(c, totals) }));
 }
 
-async function exportExcel({ people, scores, totals, standings, bonus, winnersOnly }) {
+async function exportExcel({ people, scores, totals, standings, winnersOnly }) {
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const add = (name, rows, widths) => {
@@ -2311,20 +2299,18 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
     if (widths) ws["!cols"] = widths.map((w) => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
-  const [bh, bm] = EARLY_BONUS.before.split(":").map(Number);
-  const cut = bh * 60 + bm;
   const cup = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
   const inCount = people.filter((p) => p.checkedInAt).length;
 
   // Winners / standings
-  const head = ["Rank", "House", "Colour"].concat(CHALLENGES.map((c) => c.name), ["Early sign-in bonus", "TOTAL"]);
-  const cupRows = cup.map((r, i) => [i + 1, r.h.name, r.h.colour].concat(CHALLENGES.map((c) => r.s.per[c.key] || 0), [r.s.per.bonus || 0, r.s.total]));
+  const head = ["Rank", "House", "Colour"].concat(CHALLENGES.map((c) => c.name), ["TOTAL"]);
+  const cupRows = cup.map((r, i) => [i + 1, r.h.name, r.h.colour].concat(CHALLENGES.map((c) => r.s.per[c.key] || 0), [r.s.total]));
   add("Winners", [
     [EVENT.name + " - results"], ["Exported", myStamp(new Date().toISOString()) + " (MYT)"],
     ["House Cup champion", cup[0] && cup[0].s.total > 0 ? cup[0].h.name + " - " + cup[0].s.total + " pts" : "No points yet"],
     ["RSVP'd", people.length], ["Checked in", inCount], ["Not checked in", people.length - inCount],
     [], ["HOUSE CUP STANDINGS"], head,
-  ].concat(cupRows), [8, 16, 10].concat(CHALLENGES.map(() => 16), [18, 10]));
+  ].concat(cupRows), [8, 16, 10].concat(CHALLENGES.map(() => 16), [10]));
 
   // Per challenge
   const res = [["Challenge", "Rank", "House", "Colour", "Result", "Points awarded"]];
@@ -2332,18 +2318,16 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
     if (!rows.length) res.push([c.name, "", "No result yet", "", "", ""]);
     rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v) + (r.lost ? " (-" + r.lost + " time deduction)" : ""), r.pts]));
   });
-  HOUSES.forEach((h) => res.push([EARLY_BONUS.label + " (all in before " + EARLY_BONUS.before + ")", "", h.name, h.colour,
-    bonus[h.key].inTime + " / " + bonus[h.key].team + " in time", bonus[h.key].earned ? EARLY_BONUS.points : 0]));
   add("Challenge results", res, [34, 6, 14, 10, 22, 14]);
 
   if (!winnersOnly) {
-    const ph = ["Name", "Department", "Email", "Phone", "House", "Colour", "Pass code", "RSVP at (MYT)", "Checked in", "Check-in time (MYT)", "Before " + EARLY_BONUS.before];
+    const ph = ["Name", "Department", "Email", "Phone", "House", "Colour", "Pass code", "RSVP at (MYT)", "Checked in", "Check-in time (MYT)"];
     if (EVENT.hasGift) ph.push(EVENT.gift + " collected (MYT)");
     ph.push("Pass email sent (MYT)");
     const row = (p) => {
       const h = houseOf(p.house);
       const r = [p.name, p.department, p.email, p.phone, h.name, h.colour, p.token, myStamp(p.createdAt),
-        p.checkedInAt ? "Yes" : "No", myStamp(p.checkedInAt), p.checkedInAt ? (myMinutes(p.checkedInAt) < cut ? "Yes" : "No") : ""];
+        p.checkedInAt ? "Yes" : "No", myStamp(p.checkedInAt)];
       if (EVENT.hasGift) r.push(myStamp(p.giftClaimedAt));
       r.push(myStamp(p.emailSentAt));
       return r;
@@ -2354,12 +2338,12 @@ async function exportExcel({ people, scores, totals, standings, bonus, winnersOn
     add("Checked in", [ph].concat(checked.map(row)), w);
     add("Not checked in", [ph].concat(people.filter((p) => !p.checkedInAt).sort(byName).map(row)), w);
     add("All attendees", [ph].concat(people.slice().sort(byName).map(row)), w);
-    const byHouse = [["House", "Colour", "RSVP'd", "Checked in", "In before " + EARLY_BONUS.before, "Bonus earned"]];
+    const byHouse = [["House", "Colour", "RSVP'd", "Checked in"]];
     HOUSES.forEach((h) => {
       const team = people.filter((p) => p.house === h.key);
-      byHouse.push([h.name, h.colour, team.length, team.filter((p) => p.checkedInAt).length, bonus[h.key].inTime, bonus[h.key].earned ? "Yes" : "No"]);
+      byHouse.push([h.name, h.colour, team.length, team.filter((p) => p.checkedInAt).length]);
     });
-    add("By house", byHouse, [14, 10, 10, 12, 16, 12]);
+    add("By house", byHouse, [14, 10, 10, 12]);
     add("Score log", [["Time (MYT)", "Challenge", "House", "Value", "Note", "Entered by"]].concat(
       scores.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map((sc) => {
         const c = challengeOf(sc.challenge);
@@ -2373,7 +2357,7 @@ function downloadJson(data, name) {
   saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), name);
 }
 
-function BackupPanel({ people, scores, totals, standings, bonus, health, toast }) {
+function BackupPanel({ people, scores, totals, standings, health, toast }) {
   const [busy, setBusy] = useState("");
   const [backups, setBackups] = useState(db.listBackups);
   useEffect(() => { setBackups(db.listBackups()); }, [health.lastBackup]);
@@ -2382,7 +2366,7 @@ function BackupPanel({ people, scores, totals, standings, bonus, health, toast }
     try { await fn(); toast("Downloaded"); } catch (e) { toast("Export failed - try again", "bad"); }
     finally { setBusy(""); }
   };
-  const data = { people, scores, totals, standings, bonus };
+  const data = { people, scores, totals, standings };
   const full = () => ({ exportedAt: new Date().toISOString(), event: EVENT.name, mode: db.MODE, people, scores });
   const cup = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
   return (
@@ -2757,7 +2741,7 @@ function ImportList({ people, toast }) {
   );
 }
 
-function Admin({ people, scores, totals, standings, bonus, health, settingsInfo, go, toast }) {
+function Admin({ people, scores, totals, standings, health, settingsInfo, go, toast }) {
   const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("grab_admin") === "1"; } catch (e) { return false; } });
   const [tab, setTab] = useState("overview");
   if (!ok) return <AdminLogin onOk={() => setOk(true)} />;
@@ -2784,7 +2768,7 @@ function Admin({ people, scores, totals, standings, bonus, health, settingsInfo,
       {tab === "score" && <ScoreEntry totals={totals} scores={scores} people={people} toast={toast} />}
       {tab === "ledger" && <Ledger scores={scores} toast={toast} />}
       {tab === "setup" && <ChallengeSetup scores={scores} settingsInfo={settingsInfo} toast={toast} />}
-      {tab === "backup" && <BackupPanel people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} toast={toast} />}
+      {tab === "backup" && <BackupPanel people={people} scores={scores} totals={totals} standings={standings} health={health} toast={toast} />}
     </div>
   );
 }
@@ -2928,7 +2912,6 @@ export default function App() {
     return t;
   }, [scores, setVer]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bonus = useMemo(() => earlyBonus(people), [people]);
   const standings = useMemo(() => {
     const pts = {};
     HOUSES.forEach((h) => (pts[h.key] = { total: 0, per: {} }));
@@ -2939,13 +2922,8 @@ export default function App() {
         pts[r.h.key].total += r.pts;
       });
     });
-    HOUSES.forEach((h) => {
-      const b = bonus[h.key].earned ? EARLY_BONUS.points : 0;
-      pts[h.key].per.bonus = b;
-      pts[h.key].total += b;
-    });
     return pts;
-  }, [totals, bonus, setVer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [totals, setVer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { page, arg } = route;
   const toastEl = toastMsg && <div key={toastMsg.id} className={"toast toast-" + (toastMsg.tone || "ok")} role="status">{toastMsg.text}</div>;
@@ -2961,7 +2939,7 @@ export default function App() {
   else if (page === "staff") body = <PinGate title="Staff stations"><StaffHome go={go} people={people} /></PinGate>;
   else if (page === "checkin") body = <PinGate title="Lobby check-in"><CheckInStation go={go} people={people} /></PinGate>;
   else if (page === "gift" && EVENT.hasGift) body = <PinGate title={EVENT.gift + " counter"}><GiftStation go={go} people={people} toast={toast} /></PinGate>;
-  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} bonus={bonus} health={health} settingsInfo={settingsInfo} go={go} toast={toast} />;
+  else if (page === "admin") body = <Admin people={people} scores={scores} totals={totals} standings={standings} health={health} settingsInfo={settingsInfo} go={go} toast={toast} />;
   else body = <Home key="home" go={go} people={people} />;
 
   return (

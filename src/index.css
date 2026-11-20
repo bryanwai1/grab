@@ -1360,3 +1360,11 @@ a.btn { text-decoration: none; }
 .aw-hold .aw-crew::before { translate: calc(var(--dx) * var(--ar) * var(--mh)) 0; }
 .aw-mid .aw-halo { translate: calc(var(--dx) * var(--ar) * min(66vh, 640px)) 0; }
 @media (max-width: 900px) { .aw-mid .aw-halo { translate: calc(var(--dx) * var(--ar) * min(38vh, 320px)) 0; } }
+
+/* Other sections: one small tile each, with the points that house earned there. */
+.aw-other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; border-radius: 0; background: none; }
+.aw-other-item { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; padding: 9px 16px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: clamp(13px, 1.15vw, 18px); font-weight: 600; color: rgba(255,255,255,.75); }
+.aw-other-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-other-item strong { font-size: 1.2em; color: rgba(255,255,255,.7); flex: none; }
+.aw-other-on { background: rgba(255,255,255,.2); color: #fff; }
+.aw-other-on strong { color: #fff; }
