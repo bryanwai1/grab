@@ -60,11 +60,11 @@ function rankChallenge(c, totals) {
 }
 function ruleText(c) {
   const pts = ptsFor(c);
-  if (c.type === "winner") return "Winner +" + pts[0];
-  if (c.type === "time" && c.scoring === "countdown") return (c.start || 0) + " pts, -" + c.lose + " per " + (Number(c.every) === 1 ? "minute" : c.every + " min") + (c.zeroOver && c.limit ? ", 0 if over " + c.limit + " min" : "");
+  if (c.type === "winner") return "Winner +" + n2(pts[0]);
+  if (c.type === "time" && c.scoring === "countdown") return n2(c.start || 0) + " pts, -" + n2(c.lose) + " per " + (Number(c.every) === 1 ? "minute" : c.every + " min") + (c.zeroOver && c.limit ? ", 0 if over " + c.limit + " min" : "");
   if (c.type === "points" && c.pay !== "place") return "Score = points";
-  let t = pts.join(" / ");
-  if (c.type === "time" && c.scoring === "penalty") t += ", -" + c.lose + " every " + c.every + " min over " + (c.limit || 0) + " min";
+  let t = pts.map(n2).join(" / ");
+  if (c.type === "time" && c.scoring === "penalty") t += ", -" + n2(c.lose) + " every " + c.every + " min over " + (c.limit || 0) + " min";
   return t;
 }
 function cleanChallenge(c) {
@@ -1147,7 +1147,7 @@ function useBoardRanking(challenge, totals) {
         const d = prevRank.current[h.key] - rank[h.key];
         if (d !== 0) mv[h.key] = d;
         if (values[h.key] !== prevVals.current[h.key]) {
-          bp[h.key] = isTime ? "NEW BEST" : "+" + (values[h.key] - prevVals.current[h.key]);
+          bp[h.key] = isTime ? "NEW BEST" : "+" + n2(values[h.key] - prevVals.current[h.key]);
         }
       });
       setMovers(mv);
