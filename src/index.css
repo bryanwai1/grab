@@ -642,6 +642,7 @@ table.grid tr:last-child td { border-bottom: 0; }
 .big-lane-name {
   flex: 1; font-size: clamp(22px, 3.1vw, 44px); font-weight: 800;
   font-variation-settings: "wdth" 118; letter-spacing: -0.03em;
+  white-space: nowrap; /* team name always stays on one row */
 }
 .big-gap-pill {
   font-size: clamp(13px, 1.3vw, 17px); font-weight: 800; color: #ffb4ae;
@@ -649,6 +650,12 @@ table.grid tr:last-child td { border-bottom: 0; }
 }
 .big-lane-score { font-size: clamp(26px, 3.6vw, 52px); min-width: 3ch; text-align: right; }
 .pip-inline { margin: 0; }
+/* Overall cup lanes: name on one row, the per-section chips take the remaining space and wrap to 2 rows. */
+.big-lane-overall { height: auto; min-height: clamp(62px, 8.4vh, 92px); padding-top: 8px; padding-bottom: 8px; }
+.big-lane-overall .big-lane-name { flex: 0 0 auto; }
+.big-lane-overall .pip-inline { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 6px; }
+.big-lane-overall .pip-sm { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
+.big-lane-overall .big-gap-pill, .big-lane-overall .big-lane-score { flex: 0 0 auto; white-space: nowrap; }
 
 .elsewhere { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 .else-card {

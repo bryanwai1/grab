@@ -1277,7 +1277,7 @@ function OverallBoard({ standings }) {
             : "tied with " + runnerUp.h.name}
         </div>
         <div className="pip-row">
-          {CHALLENGES.map((c) => (
+          {CHALLENGES.filter((c) => leader.s.per[c.key] > 0).map((c) => (
             <span key={c.key} className="pip">{c.short} <strong>{n2(leader.s.per[c.key])}</strong></span>
           ))}
         </div>
@@ -1285,12 +1285,12 @@ function OverallBoard({ standings }) {
 
       <div className="big-lanes">
         {rows.slice(1).map((r, i) => (
-          <div key={r.h.key} className="big-lane">
+          <div key={r.h.key} className="big-lane big-lane-overall">
             <span className="lane-fill" style={{ background: r.h.hex, width: (r.s.total / top) * 100 + "%" }} />
             <span className="big-rank">{i + 2}</span>
             <span className="big-lane-name">{r.h.name}</span>
             <span className="pip-row pip-inline">
-              {CHALLENGES.map((c) => (
+              {CHALLENGES.filter((c) => r.s.per[c.key] > 0).map((c) => (
                 <span key={c.key} className="pip pip-sm">{c.short} {n2(r.s.per[c.key])}</span>
               ))}
             </span>
