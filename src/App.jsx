@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { buildEmailHtml } from "./emailTemplate";
@@ -286,6 +286,71 @@ function useCountUp(target, ms, dec) {
 }
 
 // dec: show 2 decimal places (scores and points); otherwise a whole number (head counts).
+// True when the browser is full screen (button, F11 or TV mode kiosk).
+function useIsFullscreen() {
+  const read = () => !!(document.fullscreenElement || document.webkitFullscreenElement) ||
+    (window.screen && window.innerHeight >= window.screen.height - 4 && window.innerWidth >= window.screen.width - 4);
+  const [on, setOn] = useState(read);
+  useEffect(() => {
+    const h = () => setOn(read());
+    window.addEventListener("resize", h);
+    document.addEventListener("fullscreenchange", h);
+    return () => { window.removeEventListener("resize", h); document.removeEventListener("fullscreenchange", h); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return on;
+}
+
+// Screens that must never scroll (TV / full screen): the content is measured and, if it is taller
+// than the screen, shrunk to fit. Returns a ref for the element holding the content.
+// padX / padT / padB = space the parent leaves around it; fill = stretch to the full screen height.
+function useFitScreen(active, dep, opt) {
+  const ref = useRef(null);
+  const o = opt || {};
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !active) return undefined;
+    const padX = o.padX || 0, padT = o.padT || 0, padB = o.padB || 0;
+    const root = document.documentElement;
+    const prevOverflow = root.style.overflow;
+    root.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    const reset = () => { el.style.width = ""; el.style.maxWidth = ""; el.style.margin = ""; el.style.minHeight = ""; el.style.transform = ""; el.style.transformOrigin = ""; };
+    const apply = () => {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const availH = vh - padT - padB;
+      el.style.maxWidth = "none"; el.style.margin = "0"; el.style.transformOrigin = "0 0"; el.style.transform = "none";
+      let sc = 1;
+      for (let i = 0; i < 5; i++) {
+        el.style.width = (vw - padX * 2) / sc + "px";
+        el.style.minHeight = "0px";
+        const h = el.scrollHeight || 1;
+        const next = Math.min(1, availH / h);
+        if (Math.abs(next - sc) < 0.003) { sc = next; break; }
+        sc = next;
+      }
+      if (sc >= 0.999) { reset(); if (o.fill) el.style.minHeight = availH + "px"; return; }
+      el.style.width = (vw - padX * 2) / sc + "px";
+      el.style.minHeight = o.fill ? availH / sc + "px" : "";
+      el.style.transform = "scale(" + sc + ")";
+    };
+    let raf = 0;
+    const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); };
+    apply();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(later) : null;
+    if (ro) ro.observe(el);
+    const tm = setInterval(apply, 1500); // slides change height after images / fonts / counters settle
+    window.addEventListener("resize", later);
+    document.addEventListener("fullscreenchange", later);
+    return () => {
+      cancelAnimationFrame(raf); clearInterval(tm); if (ro) ro.disconnect();
+      window.removeEventListener("resize", later); document.removeEventListener("fullscreenchange", later);
+      root.style.overflow = prevOverflow; document.body.style.overflow = "";
+      reset();
+    };
+  }, [active, dep]); // eslint-disable-line react-hooks/exhaustive-deps
+  return ref;
+}
+
 function Counter({ value, className, style, dec }) {
   const v = useCountUp(value, undefined, dec);
   return <span className={className} style={style}>{dec ? n2(v) : v}</span>;
@@ -1327,6 +1392,9 @@ function Scores({ totals, standings, go, arg, tv }) {
   const setBoard = (b) => goBoard(b, tv);
   const isOverall = board === "overall";
   const challenge = isOverall ? null : challengeOf(board);
+  const fs = useIsFullscreen();
+  const fit = tv || fs;
+  const fitRef = useFitScreen(fit, board + "|" + picker, { padX: 26, padT: 20, padB: 30 });
 
   const leaderOf = (c) =>
     HOUSES.map((h) => ({ h, v: totals[c.key][h.key] }))
@@ -1342,7 +1410,7 @@ function Scores({ totals, standings, go, arg, tv }) {
     .concat([{ key: "rotate", name: "Rotate all boards (" + DISPLAY.rotateSecs + "s each)" }]);
 
   return (
-    <div className={"stage stage-board" + (tv ? " tv" : "")}>
+    <div className={"stage stage-board" + (fit ? " tv stage-fit" : "")}>
       <div className="stage-img only-landscape" style={BG("bg-hero.jpg")} />
       <div className="stage-img only-portrait" style={BG("bg-hero-p.jpg")} />
       <div className="stage-scrim" />
@@ -1381,7 +1449,7 @@ function Scores({ totals, standings, go, arg, tv }) {
           <div className="rot-next">Next: {nextName}</div>
         </div>
       )}
-      <div className="stage-in">
+      <div className="stage-in" ref={fitRef}>
         {!tv && (
           <div className="board-switch">
             <button className={"switch-btn" + (isOverall && !rotating ? " on" : "")} onClick={() => setBoard("overall")}>
@@ -1407,12 +1475,12 @@ function Scores({ totals, standings, go, arg, tv }) {
         <div className="board-head" style={{ borderColor: (activeScored ? activeLeader.h.hex : NEUTRAL) + "55" }}>
           <div>
             <div className="board-title">{isOverall ? "Overall cup" : challenge.name}</div>
-            <div className="board-where">
-              <span className="live-dot" />
-              {isOverall
-                ? CHALLENGES.map((c) => c.short + " " + ruleText(c)).join(" - ")
-                : [challenge.venue, challenge.time, challenge.limit ? challenge.limit + " min limit" : "", challenge.metricNote, ruleText(challenge)].filter(Boolean).join(" - ")}
-            </div>
+            {isOverall
+              ? <div className="board-where"><span className="live-dot" /></div>
+              : <div className="board-where">
+                <span className="live-dot" />
+                {[challenge.venue, challenge.time, challenge.limit ? challenge.limit + " min limit" : "", challenge.metricNote, ruleText(challenge)].filter(Boolean).join(" - ")}
+              </div>}
           </div>
           <div className="board-brand">
             <Badge height={44} />
@@ -1534,12 +1602,15 @@ function Awards({ totals, standings, go, tv }) {
   const subRows = subs.map((c) => ({ c, r: subRow(c) }));
   // The other sections this house scored in, one by one (their points come straight from the standings). Zeros are left out.
   const otherRows = rest.map((c) => ({ key: c.key, name: c.short, pts: entry.s.per[c.key] || 0 })).filter((o) => o.pts > 0);
+  const fs = useIsFullscreen();
+  const fit = tv || full || fs;
+  const fitRef = useFitScreen(fit, step, { fill: true });
 
   return (
-    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
+    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "") + (fit ? " stage-fit" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
       <div className="aw-bg" />
       <Particles className="stage-canvas" density={!intro && place === 1 && !waiting ? 70 : 20} confetti={!intro && place === 1 && !waiting} />
-      <div className="aw-in">
+      <div className="aw-in" ref={fitRef}>
         <header className="aw-head">
           {intro ? <span className="aw-logo-gap" /> : <Badge height={46} />}
           {!full && <>

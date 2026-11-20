@@ -1375,3 +1375,20 @@ a.btn { text-decoration: none; }
 .aw-other-item strong { font-size: 1.2em; color: rgba(255,255,255,.7); flex: none; }
 .aw-other-on { background: rgba(255,255,255,.2); color: #fff; }
 .aw-other-on strong { color: #fff; }
+
+
+/* TV / full screen: never scroll. The page is exactly one screen tall and the content is shrunk to fit it. */
+.stage.stage-fit { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.stage-board.stage-fit .stage-in { flex: none; }
+.aw-stage.stage-fit .aw-in { min-height: 0; }
+
+/* Award section tiles: the place / time / points columns size to their content and the numbers scale with the
+   tile width, so "+300.00" and "117:13.23" always stay inside the box. */
+.aw-sub { grid-template-columns: auto minmax(0, 1fr) auto; }
+.aw-sub:not(.aw-sub-has-time) { grid-template-columns: auto minmax(0, 1fr); }
+.aw-sub .aw-sub-place span { font-size: clamp(14px, 7cqw, 42px); }
+.aw-sub .aw-sub-time span { font-size: clamp(13px, 5.4cqw, 36px); }
+.aw-sub .aw-sub-pts span { font-size: clamp(13px, 5.4cqw, 36px); }
+.aw-sub .aw-sub-time, .aw-sub .aw-sub-pts { padding-left: clamp(8px, 2.6cqw, 16px); }
+.aw-sub .aw-sub-time { margin-right: clamp(8px, 2.6cqw, 16px); }
+.aw-sub-pts, .aw-sub .aw-sub-pts { overflow: hidden; }
