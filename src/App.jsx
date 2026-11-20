@@ -51,7 +51,7 @@ function rankChallenge(c, totals) {
     .filter((r) => r.v !== undefined && scored(c, r.v))
     .sort((a, b) => (c.type === "time" ? a.v - b.v : b.v - a.v))
     .map((r, i) => {
-      const base = c.type === "points" ? r.v : c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
+      const base = c.type === "points" ? (c.pay === "place" ? ptsFor(c)[i] || 0 : r.v) : c.type === "time" && c.scoring === "countdown" ? Number(c.start) || 0 : ptsFor(c)[i] || 0;
       if (c.scoring === "countdown" && c.zeroOver && overLimit(c, r.v)) return { ...r, rank: i + 1, lost: base, pts: 0, late: true };
       const lost = deduction(c, r.v);
       return { ...r, rank: i + 1, lost, pts: Math.max(0, base - lost) };
@@ -61,7 +61,7 @@ function ruleText(c) {
   const pts = ptsFor(c);
   if (c.type === "winner") return "Winner +" + pts[0];
   if (c.type === "time" && c.scoring === "countdown") return (c.start || 0) + " pts, -" + c.lose + " per " + (Number(c.every) === 1 ? "minute" : c.every + " min") + (c.zeroOver && c.limit ? ", 0 if over " + c.limit + " min" : "");
-  if (c.type === "points") return "Score = points";
+  if (c.type === "points" && c.pay !== "place") return "Score = points";
   let t = pts.join(" / ");
   if (c.type === "time" && c.scoring === "penalty") t += ", -" + c.lose + " every " + c.every + " min over " + (c.limit || 0) + " min";
   return t;
@@ -77,6 +77,8 @@ function cleanChallenge(c) {
     venue: c.venue || "", time: c.time || "", blurb: c.blurb || "",
     scoring: type === "time" && ["penalty", "countdown"].includes(c.scoring) ? c.scoring : "rank",
     zeroOver: !!c.zeroOver,
+    // Highest score wins: the score is the points (default), or the houses are ranked by score and paid by place.
+    pay: type === "points" && c.pay === "place" ? "place" : undefined,
   };
 }
 function applySettings(st) {
@@ -1590,9 +1592,10 @@ function Awards({ totals, standings, go, tv }) {
 
             <div className="aw-right">
               {subRows.map(({ c, r }) => (
-                <div key={c.key} className={"aw-sub" + (r ? " aw-r" + r.rank : "") + (c.type === "time" ? " aw-sub-has-time" : "")}>
+                <div key={c.key} className={"aw-sub" + (r ? " aw-r" + r.rank : "") + (c.type === "time" || (c.type === "points" && c.pay === "place") ? " aw-sub-has-time" : "")}>
                   <div className="aw-sub-name">{c.name}</div>
                   <div className="aw-sub-place"><small>PLACE</small><span>{r ? PLACE_WORD[r.rank - 1].toUpperCase() : "-"}</span></div>
+                  {c.type === "points" && c.pay === "place" && <div className="aw-sub-time"><small>SCORE</small><span>{r ? r.v : "-"}</span></div>}
                   {c.type === "time" && <div className="aw-sub-time"><small>TIME</small><span>{r ? <>{fmtTime(r.v).slice(0, -3)}<i className="aw-cs">.{fmtTime(r.v).slice(-2)}</i></> : "--:--"}</span></div>}
                   <div className="aw-sub-pts"><small>POINTS</small><span>{r ? "+" + r.pts : "0"}</span></div>
                 </div>
@@ -2516,6 +2519,19 @@ function ChallengeSetup({ scores, settingsInfo, toast }) {
                 <input className="input" value={c.metricNote || ""} onChange={(e) => edit(i, { metricNote: e.target.value })} /></label>
             </div>
 
+            {c.type === "points" && (
+              <div className="cs-rule">
+                <span className="field-label">Points rule</span>
+                <div className="cs-radios">
+                  {[["score", "Score = points"], ["place", "Rank by score, points by place (500 / 300 / 200 / 100)"]].map(([k, l]) => (
+                    <label key={k} className={"cs-radio" + ((c.pay === "place" ? "place" : "score") === k ? " on" : "")}>
+                      <input type="radio" name={"pay-" + c.key} checked={(c.pay === "place" ? "place" : "score") === k} onChange={() => edit(i, { pay: k === "place" ? "place" : undefined })} />{l}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {isTime && (
               <div className="cs-rule">
                 <span className="field-label">Points rule</span>
@@ -2530,7 +2546,7 @@ function ChallengeSetup({ scores, settingsInfo, toast }) {
             )}
 
             <div className="cs-grid">
-              {!(isTime && c.scoring === "countdown") && c.type !== "points" && (
+              {!(isTime && c.scoring === "countdown") && (c.type !== "points" || c.pay === "place") && (
                 <label className="field"><span className="field-label">{c.type === "winner" ? "Points for the winner" : "Points for 1st, 2nd, 3rd, 4th"}</span>
                   <input className="input" value={c.pointsText} onChange={(e) => edit(i, { pointsText: e.target.value })} placeholder={c.type === "winner" ? "100" : "500, 300, 200, 100"} /></label>
               )}
