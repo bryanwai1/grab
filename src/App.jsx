@@ -24,7 +24,8 @@ function parseTime(str) {
   return m * 6000 + sec * 100 + c;
 }
 
-const showValue = (ch, v) => (ch.type === "time" ? fmtTime(v) : ch.type === "winner" ? (v > 0 ? "Winner" : "-") : String(v));
+const n2 = (v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(2) : String(v));
+const showValue = (ch, v, raw) => (ch.type === "time" ? fmtTime(v) : ch.type === "winner" ? (v > 0 ? "Winner" : "-") : raw ? String(v) : n2(v));
 const scored = (ch, v) => (ch.type === "time" ? isFinite(v) : v > 0);
 const ptsFor = (ch) => (ch.points && ch.points.length ? ch.points : RANK_POINTS);
 // Defaults from config.js; the admin can override them (saved in grab_settings).
@@ -262,7 +263,7 @@ function Particles({ className, density = 34, confetti = false }) {
 
 /* ================= hooks ================= */
 
-function useCountUp(target, ms) {
+function useCountUp(target, ms, dec) {
   const [v, setV] = useState(target);
   const from = useRef(target);
   useEffect(() => {
@@ -274,18 +275,20 @@ function useCountUp(target, ms) {
     const tick = (t) => {
       const p = Math.min(1, (t - t0) / dur);
       const e = 1 - Math.pow(1 - p, 3);
-      setV(Math.round(start + (target - start) * e));
+      const nv = start + (target - start) * e;
+      setV(dec ? Math.round(nv * 100) / 100 : Math.round(nv));
       if (p < 1) raf = requestAnimationFrame(tick); else from.current = target;
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [target, ms]);
+  }, [target, ms, dec]);
   return v;
 }
 
-function Counter({ value, className, style }) {
-  const v = useCountUp(value);
-  return <span className={className} style={style}>{v}</span>;
+// dec: show 2 decimal places (scores and points); otherwise a whole number (head counts).
+function Counter({ value, className, style, dec }) {
+  const v = useCountUp(value, undefined, dec);
+  return <span className={className} style={style}>{dec ? n2(v) : v}</span>;
 }
 
 /* ================= brand ================= */
@@ -1167,7 +1170,7 @@ function useBoardRanking(challenge, totals) {
   };
   const gapText = (v) => {
     if (isTime) return isFinite(v) && isFinite(best) ? "+" + fmtTime(v - best) : "no time";
-    return "-" + (best - v);
+    return "-" + n2(best - v);
   };
   const leadText = () => {
     if (isTime) {
@@ -1176,7 +1179,7 @@ function useBoardRanking(challenge, totals) {
       return d > 0 ? fmtTime(d) + " faster than " + runnerUp.h.name : "level with " + runnerUp.h.name;
     }
     const d = leader.v - runnerUp.v;
-    return d > 0 ? "+" + d + " clear of " + runnerUp.h.name : "tied with " + runnerUp.h.name;
+    return d > 0 ? "+" + n2(d) + " clear of " + runnerUp.h.name : "tied with " + runnerUp.h.name;
   };
 
   return { order, rank, leader, isTime, movers, bumps, barPct, gapText, leadText };
@@ -1194,7 +1197,7 @@ function ChallengeBoard({ challenge, totals }) {
         <div className="big-tag">{isTime ? "FASTEST ON THE CLOCK" : "HOLDING THE CROWN"}</div>
         <div className="big-champ-grid">
           <div className="big-name">{leader.h.name}</div>
-          <div className="big-score num">{isTime ? fmtTime(leader.v) : challenge.type === "winner" ? showValue(challenge, leader.v) : <Counter value={leader.v} />}</div>
+          <div className="big-score num">{isTime ? fmtTime(leader.v) : challenge.type === "winner" ? showValue(challenge, leader.v) : <Counter value={leader.v} dec />}</div>
         </div>
         <div className="big-gap">{order.slice(1).some((r) => scored(challenge, r.v)) ? leadText() : challenge.type === "winner" ? "Winner" : "first result in"}</div>
       </div>
@@ -1224,7 +1227,7 @@ function ChallengeBoard({ challenge, totals }) {
                 </span>
               ) : null}
               <span className="big-gap-pill">{gapText(r.v)}</span>
-              <span className="big-lane-score num">{isTime ? fmtTime(r.v) : challenge.type === "winner" ? showValue(challenge, r.v) : <Counter value={r.v} />}</span>
+              <span className="big-lane-score num">{isTime ? fmtTime(r.v) : challenge.type === "winner" ? showValue(challenge, r.v) : <Counter value={r.v} dec />}</span>
             </div>
           );
         })}
@@ -1266,16 +1269,16 @@ function OverallBoard({ standings }) {
         <div className="big-tag">LEADING THE HOUSE CUP</div>
         <div className="big-champ-grid">
           <div className="big-name">{leader.h.name}</div>
-          <div className="big-score num"><Counter value={leader.s.total} /></div>
+          <div className="big-score num"><Counter value={leader.s.total} dec /></div>
         </div>
         <div className="big-gap">
           {leader.s.total - runnerUp.s.total > 0
-            ? "+" + (leader.s.total - runnerUp.s.total) + " clear of " + runnerUp.h.name
+            ? "+" + n2(leader.s.total - runnerUp.s.total) + " clear of " + runnerUp.h.name
             : "tied with " + runnerUp.h.name}
         </div>
         <div className="pip-row">
           {CHALLENGES.map((c) => (
-            <span key={c.key} className="pip">{c.short} <strong>{leader.s.per[c.key]}</strong></span>
+            <span key={c.key} className="pip">{c.short} <strong>{n2(leader.s.per[c.key])}</strong></span>
           ))}
         </div>
       </div>
@@ -1288,11 +1291,11 @@ function OverallBoard({ standings }) {
             <span className="big-lane-name">{r.h.name}</span>
             <span className="pip-row pip-inline">
               {CHALLENGES.map((c) => (
-                <span key={c.key} className="pip pip-sm">{c.short} {r.s.per[c.key]}</span>
+                <span key={c.key} className="pip pip-sm">{c.short} {n2(r.s.per[c.key])}</span>
               ))}
             </span>
-            <span className="big-gap-pill">-{leader.s.total - r.s.total}</span>
-            <span className="big-lane-score num"><Counter value={r.s.total} /></span>
+            <span className="big-gap-pill">-{n2(leader.s.total - r.s.total)}</span>
+            <span className="big-lane-score num"><Counter value={r.s.total} dec /></span>
           </div>
         ))}
       </div>
@@ -1438,7 +1441,7 @@ function Scores({ totals, standings, go, arg, tv }) {
                 <span className="chip-dot" style={{ background: cupScored ? cupLeader.h.hex : NEUTRAL }} />
                 <span className="else-what">Overall cup</span>
                 <span className="else-who">{cupScored ? cupLeader.h.name : "No points yet"}</span>
-                <span className="num else-val">{cupScored ? cupLeader.v : "-"}</span>
+                <span className="num else-val">{cupScored ? n2(cupLeader.v) : "-"}</span>
               </button>
             )}
           </div>
@@ -1581,7 +1584,7 @@ function Awards({ totals, standings, go, tv }) {
               <h1 className="aw-team">{entry.h.name}</h1>
               <div className="aw-total">
                 <span className="aw-total-label">TOTAL POINTS</span>
-                <Counter className="aw-total-num num" value={entry.s.total} />
+                <Counter className="aw-total-num num" value={entry.s.total} dec />
               </div>
             </div>
 
@@ -1595,9 +1598,9 @@ function Awards({ totals, standings, go, tv }) {
                 <div key={c.key} className={"aw-sub" + (r ? " aw-r" + r.rank : "") + (c.type === "time" || (c.type === "points" && c.pay === "place") ? " aw-sub-has-time" : "")}>
                   <div className="aw-sub-name">{c.name}</div>
                   <div className="aw-sub-place"><small>PLACE</small><span>{r ? PLACE_WORD[r.rank - 1].toUpperCase() : "-"}</span></div>
-                  {c.type === "points" && c.pay === "place" && <div className="aw-sub-time"><small>SCORE</small><span>{r ? r.v : "-"}</span></div>}
+                  {c.type === "points" && c.pay === "place" && <div className="aw-sub-time"><small>SCORE</small><span>{r ? n2(r.v) : "-"}</span></div>}
                   {c.type === "time" && <div className="aw-sub-time"><small>TIME</small><span>{r ? <>{fmtTime(r.v).slice(0, -3)}<i className="aw-cs">.{fmtTime(r.v).slice(-2)}</i></> : "--:--"}</span></div>}
-                  <div className="aw-sub-pts"><small>POINTS</small><span>{r ? "+" + r.pts : "0"}</span></div>
+                  <div className="aw-sub-pts"><small>POINTS</small><span>{r ? "+" + n2(r.pts) : "0.00"}</span></div>
                 </div>
               ))}
               {otherRows.length > 0 && (
@@ -1605,7 +1608,7 @@ function Awards({ totals, standings, go, tv }) {
                   {otherRows.map((o) => (
                     <div key={o.key} className="aw-other-item aw-other-on">
                       <span>{o.name}</span>
-                      <strong className="num">+{o.pts}</strong>
+                      <strong className="num">+{n2(o.pts)}</strong>
                     </div>
                   ))}
                 </div>
@@ -2319,7 +2322,7 @@ async function exportExcel({ people, scores, totals, standings, winnersOnly }) {
   const res = [["Challenge", "Rank", "House", "Colour", "Result", "Points awarded"]];
   challengeResults(totals).forEach(({ c, rows }) => {
     if (!rows.length) res.push([c.name, "", "No result yet", "", "", ""]);
-    rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v) + (r.lost ? " (-" + r.lost + " time deduction)" : ""), r.pts]));
+    rows.forEach((r) => res.push([c.name, r.rank, r.h.name, r.h.colour, showValue(c, r.v, true) + (r.lost ? " (-" + r.lost + " time deduction)" : ""), r.pts]));
   });
   add("Challenge results", res, [34, 6, 14, 10, 22, 14]);
 
