@@ -1334,7 +1334,8 @@ a.btn { text-decoration: none; }
 .aw-hold .aw-title > img { height: clamp(110px, 28vh, 420px) !important; }
 .aw-hold .aw-title-crew { gap: clamp(10px, 2.6vw, 56px); margin-top: 0; align-items: flex-end; }
 .aw-hold .aw-crew { gap: clamp(8px, 1.6vh, 18px); }
-.aw-hold .aw-crew img { height: clamp(130px, 36vh, 500px); }
+.aw-hold .aw-crew { --mh: clamp(130px, 36vh, 500px); }
+.aw-hold .aw-crew img { height: var(--mh); }
 .aw-hold .aw-crew::before { width: clamp(100px, 24vh, 340px); top: 6%; box-shadow: 0 0 0 8px rgba(255,255,255,.14); }
 .aw-hold .aw-crew span {
   display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.05;
@@ -1344,7 +1345,18 @@ a.btn { text-decoration: none; }
 @media (max-width: 900px) {
   .aw-hold .aw-title-crew { max-width: 560px; gap: 18px 12px; }
   .aw-hold .aw-title > img { height: clamp(90px, 16vh, 160px) !important; }
-  .aw-hold .aw-crew img { height: min(19vh, 190px); }
+  .aw-hold .aw-crew { --mh: min(19vh, 190px); }
   .aw-hold .aw-crew::before { width: min(15vh, 140px); }
   .aw-hold .aw-crew span { width: 100%; min-height: 40px; font-size: clamp(15px, 4.2vw, 24px); }
 }
+
+/* The circle sits behind the mascot's body, not the middle of its picture (the pictures are cropped tight, so a raised
+   arm or a ponytail moves the picture's middle away from the body). --dx is how far the body is from the picture's
+   middle, as a share of its width; --ar is the picture's width / height. */
+[data-m="blue"] { --dx: -.02; --ar: .764; }
+[data-m="red"] { --dx: .02; --ar: 1.029; }
+[data-m="purple"] { --dx: -.09; --ar: .642; }
+[data-m="yellow"] { --dx: -.05; --ar: .595; }
+.aw-hold .aw-crew::before { translate: calc(var(--dx) * var(--ar) * var(--mh)) 0; }
+.aw-mid .aw-halo { translate: calc(var(--dx) * var(--ar) * min(66vh, 640px)) 0; }
+@media (max-width: 900px) { .aw-mid .aw-halo { translate: calc(var(--dx) * var(--ar) * min(38vh, 320px)) 0; } }

@@ -1575,7 +1575,7 @@ function Awards({ totals, standings, go, tv }) {
             {!hold && <div className="aw-title-sub">House Cup - 4th place to 1st place</div>}
             <div className="aw-title-crew">
               {HOUSES.map((h) => (
-                <div key={h.key} className="aw-crew" style={{ "--team": h.hex }}>
+                <div key={h.key} className="aw-crew" data-m={MASCOT[h.key]} style={{ "--team": h.hex }}>
                   <img src={mascotSrc(h.key)} alt={h.name + " mascot"} />
                   <span>{h.name}</span>
                 </div>
@@ -1604,7 +1604,7 @@ function Awards({ totals, standings, go, tv }) {
               </div>
             </div>
 
-            <div className="aw-mid">
+            <div className="aw-mid" data-m={MASCOT[entry.h.key]}>
               <div className="aw-halo" />
               <img className="aw-mascot" src={mascotSrc(entry.h.key)} alt={entry.h.name + " mascot"} />
             </div>
