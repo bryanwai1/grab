@@ -1556,6 +1556,16 @@ function Awards({ totals, standings, go, tv }) {
   const [step, setStep] = useState(0); // 0 = holding slide, 1 = intro slide, 2 = 4th place ... 5 = 1st place
   const ranked = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
   const waiting = ranked.every((r) => r.s.total === 0);
+  // Houses on the same total (to the 2 decimals shown) share a place: two on top = two champions, then 2nd, then 3rd.
+  const cents = (v) => Math.round((Number(v) || 0) * 100);
+  const groups = [];
+  ranked.forEach((r) => {
+    const g = groups[groups.length - 1];
+    if (g && cents(g[0].s.total) === cents(r.s.total)) g.push(r); else groups.push([r]);
+  });
+  const lastStep = groups.length + 1; // 0 = holding, 1 = intro, then one slide per place, lowest first
+  const lastRef = useRef(lastStep);
+  lastRef.current = lastStep;
   const subs = CHALLENGES.filter((c) => c.type !== "winner").slice(0, 3);
   const rest = CHALLENGES.filter((c) => subs.indexOf(c) < 0);
   const [full, setFull] = useState(false);
@@ -1575,12 +1585,17 @@ function Awards({ totals, standings, go, tv }) {
     on();
     return () => { document.removeEventListener("fullscreenchange", on); document.removeEventListener("webkitfullscreenchange", on); };
   }, []);
-  const hold = step === 0; // logo + the four mascots only, shown while people settle
-  const intro = step <= 1; // the two title slides share their look
-  const place = 6 - step;
-  const entry = ranked[intro ? 0 : place - 1];
-  const next = () => setStep((n) => Math.min(5, n + 1));
-  const prev = () => setStep((n) => Math.max(0, n - 1));
+  const cur = Math.min(step, lastStep);
+  const hold = cur === 0; // logo + the four mascots only, shown while people settle
+  const intro = cur <= 1; // the two title slides share their look
+  const gi = intro ? 0 : groups.length - cur + 1; // which group of houses this slide reveals
+  const place = gi + 1;
+  const entries = groups[gi] || groups[0];
+  const entry = entries[0];
+  const tie = !intro && !waiting && entries.length > 1;
+  const nPlaces = waiting ? HOUSES.length : groups.length;
+  const next = () => setStep((n) => Math.min(lastRef.current, n + 1));
+  const prev = () => setStep((n) => Math.max(0, Math.min(n, lastRef.current) - 1));
 
   useEffect(() => {
     const on = (e) => {
@@ -1604,10 +1619,12 @@ function Awards({ totals, standings, go, tv }) {
   const otherRows = rest.map((c) => ({ key: c.key, name: c.short, pts: entry.s.per[c.key] || 0 })).filter((o) => o.pts > 0);
   const fs = useIsFullscreen();
   const fit = tv || full || fs;
-  const fitRef = useFitScreen(fit, step, { fill: true });
+  const fitRef = useFitScreen(fit, cur + "|" + entries.map((e) => e.h.key).join(","), { fill: true });
+  // Tied houses: the points each one earned in every section, side by side.
+  const tieRows = tie ? CHALLENGES.map((c) => ({ key: c.key, name: c.name, pts: entries.map((e) => e.s.per[c.key] || 0) })).filter((r) => r.pts.some((p) => p > 0)) : [];
 
   return (
-    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "") + (fit ? " stage-fit" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
+    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "") + (fit ? " stage-fit" : "")} style={{ "--team": intro || tie ? (intro ? "#ffffff" : MEDAL_STYLE[place].c[1]) : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
       <div className="aw-bg" />
       <Particles className="stage-canvas" density={!intro && place === 1 && !waiting ? 70 : 20} confetti={!intro && place === 1 && !waiting} />
       <div className="aw-in" ref={fitRef}>
@@ -1627,7 +1644,7 @@ function Awards({ totals, standings, go, tv }) {
           <section key={hold ? "hold" : "intro"} className="aw-title">
             <Badge height={150} style={{ height: "clamp(100px, 24vh, 240px)", width: "auto" }} />
             {!hold && <h1 className="aw-title-main">AWARDS</h1>}
-            {!hold && <div className="aw-title-sub">House Cup - 4th place to 1st place</div>}
+            {!hold && <div className="aw-title-sub">House Cup - {nPlaces > 1 ? PLACE_WORD[nPlaces - 1] + " place to 1st place" : "1st place"}</div>}
             <div className="aw-title-crew">
               {HOUSES.map((h) => (
                 <div key={h.key} className="aw-crew" data-m={MASCOT[h.key]} style={{ "--team": h.hex }}>
@@ -1643,27 +1660,61 @@ function Awards({ totals, standings, go, tv }) {
             <p>The 4th to 1st place slides fill in by themselves as points come in.</p>
           </div>
         ) : (
-          <section key={step + entry.h.key} className="aw-slide">
+          <section key={cur + entries.map((e) => e.h.key).join(",")} className={"aw-slide" + (tie ? " aw-slide-tie aw-k" + entries.length : "")}>
             <div className="aw-left">
               <div className="aw-place" aria-label={PLACE_WORD[place - 1] + " place"}>
                 <div className="aw-medal-wrap"><Medal place={place} /></div>
                 <div className="aw-place-text">
                   <span className="aw-place-word">{MEDAL_STYLE[place].word}</span>
-                  <span className="aw-place-sub">PLACE</span>
+                  <span className="aw-place-sub">{tie ? (place === 1 ? "CHAMPIONS" : "PLACE - TIED") : "PLACE"}</span>
                 </div>
               </div>
-              <h1 className="aw-team">{entry.h.name}</h1>
+              {tie ? (
+                <div className="aw-tie-names">
+                  {entries.map((e) => <h1 key={e.h.key} className="aw-team aw-tie-name" style={{ "--team": e.h.hex }}>{e.h.name}</h1>)}
+                </div>
+              ) : (
+                <h1 className="aw-team">{entry.h.name}</h1>
+              )}
               <div className="aw-total">
-                <span className="aw-total-label">TOTAL POINTS</span>
+                <span className="aw-total-label">{tie ? "TOTAL POINTS - EACH" : "TOTAL POINTS"}</span>
                 <Counter className="aw-total-num num" value={entry.s.total} dec />
               </div>
             </div>
 
-            <div className="aw-mid" data-m={MASCOT[entry.h.key]}>
-              <div className="aw-halo" />
-              <img className="aw-mascot" src={mascotSrc(entry.h.key)} alt={entry.h.name + " mascot"} />
-            </div>
+            {tie ? (
+              <div className="aw-mid aw-mid-tie">
+                {entries.map((e) => (
+                  <div key={e.h.key} className="aw-tm" data-m={MASCOT[e.h.key]} style={{ "--team": e.h.hex }}>
+                    <div className="aw-halo" />
+                    <img className="aw-mascot" src={mascotSrc(e.h.key)} alt={e.h.name + " mascot"} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="aw-mid" data-m={MASCOT[entry.h.key]}>
+                <div className="aw-halo" />
+                <img className="aw-mascot" src={mascotSrc(entry.h.key)} alt={entry.h.name + " mascot"} />
+              </div>
+            )}
 
+            {tie ? (
+              <div className="aw-right">
+                <div className="aw-tie-tbl" style={{ "--k": entries.length }}>
+                  <div className="aw-tie-row aw-tie-head">
+                    <span />
+                    {entries.map((e) => <b key={e.h.key} style={{ "--team": e.h.hex }}>{e.h.name}</b>)}
+                  </div>
+                  {tieRows.map((r) => (
+                    <div key={r.key} className="aw-tie-row">
+                      <span>{r.name}</span>
+                      {r.pts.map((p, i) => <strong key={i} className="num">{p > 0 ? "+" + n2(p) : "-"}</strong>)}
+                    </div>
+                  ))}
+                  {tieRows.length === 0 && <div className="aw-tie-none">No points scored yet</div>}
+                </div>
+              </div>
+            ) : (
             <div className="aw-right">
               {subRows.map(({ c, r }) => (
                 <div key={c.key} className={"aw-sub" + (r ? " aw-r" + r.rank : "") + (c.type === "time" || (c.type === "points" && c.pay === "place") ? " aw-sub-has-time" : "")}>
@@ -1685,14 +1736,15 @@ function Awards({ totals, standings, go, tv }) {
                 </div>
               )}
             </div>
+            )}
           </section>
         )}
 
         {/* Full screen is a clean stage: no buttons at all, the presenter uses the arrow keys. */}
         {!full && (
           <nav className="aw-ctrl" aria-label="Award slides">
-            <button className="switch-btn aw-btn" onClick={prev} disabled={step === 0}>Back</button>
-            <button className="switch-btn aw-btn aw-next" onClick={next} disabled={step === 5}>{step === 5 ? "Champions!" : step === 0 ? "Next" : step === 1 ? "Start the awards" : "Reveal " + PLACE_WORD[4 - step] + " place"}</button>
+            <button className="switch-btn aw-btn" onClick={prev} disabled={cur === 0}>Back</button>
+            <button className="switch-btn aw-btn aw-next" onClick={next} disabled={cur >= lastStep}>{cur >= lastStep ? "Champions!" : cur === 0 ? "Next" : cur === 1 ? "Start the awards" : "Reveal " + PLACE_WORD[groups.length - cur] + " place"}</button>
           </nav>
         )}
       </div>

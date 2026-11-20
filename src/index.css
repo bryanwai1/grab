@@ -1392,3 +1392,32 @@ a.btn { text-decoration: none; }
 .aw-sub .aw-sub-time, .aw-sub .aw-sub-pts { padding-left: clamp(8px, 2.6cqw, 16px); }
 .aw-sub .aw-sub-time { margin-right: clamp(8px, 2.6cqw, 16px); }
 .aw-sub-pts, .aw-sub .aw-sub-pts { overflow: hidden; }
+
+/* Tied houses on the awards: they share one slide (two champions, then 2nd, then 3rd). */
+.aw-slide-tie { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.15fr) minmax(0, 1fr); }
+.aw-tie-names { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; max-width: 100%; }
+.aw-tie-name.aw-team { background: var(--team); color: #fff; text-shadow: none; font-size: clamp(22px, 2.5vw, 42px); padding: .14em .55em; border-radius: 14px; box-shadow: 0 6px 0 rgba(4,18,10,.22); max-width: 100%; overflow-wrap: anywhere; }
+.aw-slide-tie .aw-total-label { letter-spacing: .12em; }
+.aw-slide-tie .aw-total-num { font-size: clamp(44px, 5.4vw, 92px); }
+.aw-mid-tie { display: flex; align-items: flex-end; justify-content: center; gap: clamp(2px, .8vw, 14px); }
+.aw-tm { --mh: min(44vh, 440px); position: relative; flex: 1 1 0; min-width: 0; display: grid; place-items: center; }
+.aw-k3 .aw-tm { --mh: min(32vh, 320px); }
+.aw-k4.aw-slide-tie .aw-mid-tie { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; row-gap: 8px; }
+.aw-k4 .aw-tm { --mh: min(24vh, 230px); }
+.aw-mid-tie .aw-tm .aw-mascot { height: var(--mh); max-width: 100%; }
+.aw-mid-tie .aw-tm .aw-halo { width: min(100%, calc(var(--mh) * .78)); translate: calc(var(--dx) * var(--ar) * var(--mh)) 0; }
+@media (max-width: 900px) {
+  .aw-slide-tie { grid-template-columns: minmax(0, 1fr); }
+  .aw-tie-names { align-items: center; }
+  .aw-tm { --mh: min(26vh, 220px); }
+  .aw-k3 .aw-tm { --mh: min(20vh, 170px); }
+  .aw-k4 .aw-tm { --mh: min(15vh, 130px); }
+}
+.aw-tie-tbl { container-type: inline-size; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.aw-tie-row { display: grid; grid-template-columns: minmax(0, 1.25fr) repeat(var(--k, 2), minmax(0, 1fr)); gap: 6px 10px; align-items: center; padding: 12px 16px; border-radius: 18px; background: rgba(255,255,255,.18); min-width: 0; }
+.aw-tie-row > span { font-size: clamp(12px, 1.1vw, 17px); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.92); min-width: 0; overflow-wrap: anywhere; }
+.aw-tie-row > strong { font-family: "Cinzel", "Times New Roman", Georgia, serif; font-weight: 900; line-height: 1; white-space: nowrap; color: #fff; text-align: center; font-size: clamp(11px, calc(11cqw / var(--k, 2)), 34px); font-variant-numeric: lining-nums tabular-nums; text-shadow: 0 2px 0 rgba(4,18,10,.25); }
+.aw-tie-head { background: none; padding-top: 0; padding-bottom: 0; }
+.aw-tie-head > b { background: var(--team); color: #fff; border-radius: 999px; padding: .4em .5em; text-align: center; font-size: clamp(11px, 1vw, 16px); font-weight: 800; line-height: 1.1; min-width: 0; overflow-wrap: anywhere; box-shadow: 0 3px 0 rgba(4,18,10,.22); }
+.aw-tie-none { padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,.14); text-align: center; font-weight: 700; color: rgba(255,255,255,.85); }
+.aw-slide-tie .aw-place-sub { letter-spacing: .2em; white-space: nowrap; }
