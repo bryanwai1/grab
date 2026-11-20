@@ -2907,6 +2907,26 @@ export default function App() {
     return db.subscribe(both);
   }, [refresh, loadSettings]);
 
+  // Live screens (scoreboard / TV / awards): poll every 5s and refresh the moment
+  // the screen wakes up, regains focus or the network comes back, so a stalled
+  // realtime connection or a sleeping TV never leaves old scores on display.
+  const liveScreen = route.page === "scores" || route.page === "awards";
+  useEffect(() => {
+    if (!liveScreen) return undefined;
+    const both = () => { refresh(); loadSettings(); };
+    const onVis = () => { if (document.visibilityState === "visible") both(); };
+    const t = setInterval(both, 5000);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", both);
+    window.addEventListener("online", both);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", both);
+      window.removeEventListener("online", both);
+    };
+  }, [liveScreen, refresh, loadSettings]);
+
   const toast = useCallback((text, tone) => {
     setToastMsg({ text, tone, id: Date.now() });
   }, []);
