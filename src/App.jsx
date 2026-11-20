@@ -1500,7 +1500,7 @@ function Medal({ place }) {
 const mascotSrc = (key) => (process.env.PUBLIC_URL || "") + "/mascots/" + (MASCOT[key] || "blue") + ".webp";
 
 function Awards({ totals, standings, go, tv }) {
-  const [step, setStep] = useState(0); // 0 = intro slide, 1 = 4th place ... 4 = 1st place
+  const [step, setStep] = useState(0); // 0 = holding slide, 1 = intro slide, 2 = 4th place ... 5 = 1st place
   const ranked = HOUSES.map((h) => ({ h, s: standings[h.key] })).sort((a, b) => b.s.total - a.s.total);
   const waiting = ranked.every((r) => r.s.total === 0);
   const subs = CHALLENGES.filter((c) => c.type !== "winner").slice(0, 3);
@@ -1522,10 +1522,11 @@ function Awards({ totals, standings, go, tv }) {
     on();
     return () => { document.removeEventListener("fullscreenchange", on); document.removeEventListener("webkitfullscreenchange", on); };
   }, []);
-  const intro = step === 0;
-  const place = 5 - step;
+  const hold = step === 0; // logo + the four mascots only, shown while people settle
+  const intro = step <= 1; // the two title slides share their look
+  const place = 6 - step;
   const entry = ranked[intro ? 0 : place - 1];
-  const next = () => setStep((n) => Math.min(4, n + 1));
+  const next = () => setStep((n) => Math.min(5, n + 1));
   const prev = () => setStep((n) => Math.max(0, n - 1));
 
   useEffect(() => {
@@ -1551,25 +1552,27 @@ function Awards({ totals, standings, go, tv }) {
   const otherNames = rest.map((c) => c.short).concat(["Early sign-in"]).join(", ");
 
   return (
-    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (tv ? " tv" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
+    <div className={"stage aw-stage " + (intro ? "aw-intro" : "aw-p" + place) + (hold ? " aw-hold" : "") + (full ? " aw-full-on" : "") + (tv ? " tv" : "")} style={{ "--team": intro ? "#ffffff" : entry.h.hex, "--glow": MEDAL_STYLE[intro ? 1 : place].glow }}>
       <div className="aw-bg" />
       <Particles className="stage-canvas" density={!intro && place === 1 && !waiting ? 70 : 20} confetti={!intro && place === 1 && !waiting} />
       <div className="aw-in">
         <header className="aw-head">
           {intro ? <span className="aw-logo-gap" /> : <Badge height={46} />}
-          <div className="aw-live"><span className="live-dot" />Live ranking - updates automatically</div>
-          <div className="aw-head-btns">
-            {canFull && <button className="switch-btn aw-full" onClick={toggleFull}>{full ? "Exit full screen" : "Full screen"}</button>}
-            {!tv && <button className="switch-btn" onClick={() => go("scores")}>Live scores</button>}
-            {!tv && <button className="switch-btn" onClick={() => go("home")}>Exit</button>}
-          </div>
+          {!full && <>
+            <div className="aw-live"><span className="live-dot" />Live ranking - updates automatically</div>
+            <div className="aw-head-btns">
+              {canFull && <button className="switch-btn aw-full" onClick={toggleFull}>Full screen</button>}
+              {!tv && <button className="switch-btn" onClick={() => go("scores")}>Live scores</button>}
+              {!tv && <button className="switch-btn" onClick={() => go("home")}>Exit</button>}
+            </div>
+          </>}
         </header>
 
         {intro ? (
-          <section key="intro" className="aw-title">
+          <section key={hold ? "hold" : "intro"} className="aw-title">
             <Badge height={150} style={{ height: "clamp(100px, 24vh, 240px)", width: "auto" }} />
-            <h1 className="aw-title-main">AWARDS</h1>
-            <div className="aw-title-sub">House Cup - 4th place to 1st place</div>
+            {!hold && <h1 className="aw-title-main">AWARDS</h1>}
+            {!hold && <div className="aw-title-sub">House Cup - 4th place to 1st place</div>}
             <div className="aw-title-crew">
               {HOUSES.map((h) => (
                 <div key={h.key} className="aw-crew" style={{ "--team": h.hex }}>
@@ -1620,10 +1623,13 @@ function Awards({ totals, standings, go, tv }) {
           </section>
         )}
 
-        <nav className="aw-ctrl" aria-label="Award slides">
-          <button className="switch-btn aw-btn" onClick={prev} disabled={step === 0}>Back</button>
-          <button className="switch-btn aw-btn aw-next" onClick={next} disabled={step === 4}>{step === 4 ? "Champions!" : step === 0 ? "Start the awards" : "Reveal " + PLACE_WORD[3 - step] + " place"}</button>
-        </nav>
+        {/* Full screen is a clean stage: no buttons at all, the presenter uses the arrow keys. */}
+        {!full && (
+          <nav className="aw-ctrl" aria-label="Award slides">
+            <button className="switch-btn aw-btn" onClick={prev} disabled={step === 0}>Back</button>
+            <button className="switch-btn aw-btn aw-next" onClick={next} disabled={step === 5}>{step === 5 ? "Champions!" : step === 0 ? "Next" : step === 1 ? "Start the awards" : "Reveal " + PLACE_WORD[4 - step] + " place"}</button>
+          </nav>
+        )}
       </div>
     </div>
   );
